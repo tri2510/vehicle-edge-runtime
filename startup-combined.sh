@@ -3,13 +3,16 @@
 # Combined Kit-Manager + Vehicle Edge Runtime Startup Script
 # Runs both services in the same container
 
+# Create log directory if it doesn't exist
+mkdir -p /app/data/logs
+
 cd /app/Kit-Manager
 
 echo "Starting Kit-Manager on port 3090..."
 npm start > /app/data/logs/kit-manager.log 2>&1 &
 KIT_MANAGER_PID=$!
 
-sleep 2
+sleep 3
 
 cd /app
 
@@ -17,7 +20,7 @@ echo "Starting Vehicle Edge Runtime on port 3002..."
 npm start > /app/data/logs/vehicle-edge-runtime.log 2>&1 &
 RUNTIME_PID=$!
 
-sleep 3
+sleep 5
 
 echo "Combined Vehicle Edge Runtime started!"
 echo ""
@@ -37,5 +40,16 @@ echo ""
 echo "To stop both services:"
 echo "  kill $KIT_MANAGER_PID $RUNTIME_PID"
 
+# Function to handle shutdown
+shutdown() {
+    echo "Shutting down services..."
+    [ ! -z "$KIT_MANAGER_PID" ] && kill $KIT_MANAGER_PID 2>/dev/null
+    [ ! -z "$RUNTIME_PID" ] && kill $RUNTIME_PID 2>/dev/null
+    exit 0
+}
+
+# Set up signal handlers
+trap shutdown SIGTERM SIGINT
+
 # Wait for both processes
-wait $KIT_MANAGER_PID $RUNTIME_PID
+wait
