@@ -1,0 +1,51 @@
+{
+  "name": "vehicle-edge-runtime",
+  "version": "1.0.0",
+  "description": "Vehicle Edge Runtime for Eclipse Autowrx - Simplified application execution environment",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test tests/**/*.test.js",
+    "test:unit": "node --test tests/unit/**/*.test.js",
+    "test:integration": "node --test tests/integration/**/*.test.js",
+    "test:e2e": "node --test tests/e2e/**/*.test.js",
+    "lint": "eslint src/**/*.js tests/**/*.js",
+    "lint:fix": "eslint src/**/*.js tests/**/*.js --fix",
+    "docker:build": "docker build -t vehicle-edge-runtime .",
+    "docker:build-dev": "docker build -f Dockerfile.dev -t vehicle-edge-runtime:dev .",
+    "docker:run": "docker run -p 3002:3002 -p 3003:3003 -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd)/data:/app/data vehicle-edge-runtime",
+    "docker:run-dev": "docker-compose -f docker-compose.dev.yml up --build",
+    "docker:up": "docker-compose up -d --build",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f vehicle-edge-runtime"
+  },
+  "keywords": [
+    "vehicle",
+    "edge-runtime",
+    "autowrx",
+    "sdv",
+    "automotive"
+  ],
+  "author": "Vehicle Edge Runtime Team",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "dockerode": "^3.3.5",
+    "dotenv": "^16.6.1",
+    "fs-extra": "^11.2.0",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.3",
+    "semver": "^7.6.0",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

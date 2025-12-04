@@ -1,0 +1,318 @@
+/**
+ * Vehicle Edge Runtime - Core Runtime Class
+ * Main runtime management and WebSocket server implementation
+ */
+
+import { WebSocketServer } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+import { EventEmitter } from 'events';
+import WebSocket from 'ws';
+import { RuntimeRegistry } from './RuntimeRegistry.js';
+import { ApplicationManager } from '../apps/ApplicationManager.js';
+import { ConsoleManager } from '../console/ConsoleManager.js';
+import { WebSocketHandler } from '../api/WebSocketHandler.js';
+import { Logger } from '../utils/Logger.js';
+import { HealthCheck } from '../utils/HealthCheck.js';
+
+export class VehicleEdgeRuntime extends EventEmitter {
+    constructor(options = {}) {
+        super();
+
+        this.options = {
+            port: options.port || 3002,
+            kitManagerUrl: options.kitManagerUrl || 'ws://localhost:8080',
+            logLevel: options.logLevel || 'info',
+            dataPath: options.dataPath || './data',
+            ...options
+        };
+
+        this.logger = new Logger('VehicleEdgeRuntime', this.options.logLevel);
+
+        // Core components
+        this.wsServer = null;
+        this.kitManagerConnection = null;
+        this.runtimeId = uuidv4();
+
+        // Managers
+        this.registry = new RuntimeRegistry(this.options);
+        this.appManager = new ApplicationManager(this.options);
+        this.consoleManager = new ConsoleManager(this.options);
+        this.wsHandler = new WebSocketHandler(this);
+
+        // Health check
+        this.healthCheck = new HealthCheck(parseInt(this.options.port) + 1, this);
+
+        // Runtime state
+        this.isRunning = false;
+        this.clients = new Map();
+        this.registeredKits = new Map();
+
+        this.logger.info('Vehicle Edge Runtime initialized', {
+            runtimeId: this.runtimeId,
+            port: this.options.port,
+            kitManagerUrl: this.options.kitManagerUrl
+        });
+    }
+
+    async start() {
+        if (this.isRunning) {
+            throw new Error('Runtime is already running');
+        }
+
+        try {
+            this.logger.info('Starting Vehicle Edge Runtime...');
+
+            // Initialize data directories
+            await this._initializeDirectories();
+
+            // Start WebSocket server
+            await this._startWebSocketServer();
+
+            // Connect to Kit Manager
+            await this._connectToKitManager();
+
+            // Initialize managers
+            await this.appManager.initialize();
+            this.appManager.setRuntime(this);
+            await this.consoleManager.initialize();
+            this.consoleManager.setRuntime(this);
+
+            // Initialize health check
+            await this.healthCheck.start();
+
+            this.isRunning = true;
+            this.emit('started');
+
+            this.logger.info('Vehicle Edge Runtime started successfully', {
+                port: this.options.port,
+                runtimeId: this.runtimeId
+            });
+
+        } catch (error) {
+            this.logger.error('Failed to start Vehicle Edge Runtime', { error: error.message });
+            await this.stop();
+            throw error;
+        }
+    }
+
+    async stop() {
+        if (!this.isRunning) {
+            return;
+        }
+
+        this.logger.info('Stopping Vehicle Edge Runtime...');
+
+        try {
+            // Stop health check
+            if (this.healthCheck) {
+                await this.healthCheck.stop();
+            }
+
+            // Stop accepting new connections
+            if (this.wsServer) {
+                this.wsServer.close();
+            }
+
+            // Disconnect from Kit Manager
+            if (this.kitManagerConnection) {
+                this.kitManagerConnection.close();
+            }
+
+            // Stop all running applications
+            await this.appManager.stopAllApplications();
+
+            // Close all client connections
+            for (const [clientId, client] of this.clients) {
+                client.close();
+            }
+            this.clients.clear();
+
+            this.isRunning = false;
+            this.emit('stopped');
+
+            this.logger.info('Vehicle Edge Runtime stopped successfully');
+
+        } catch (error) {
+            this.logger.error('Error during shutdown', { error: error.message });
+        }
+    }
+
+    /**
+     * Get runtime status and statistics
+     */
+    getStatus() {
+        return {
+            runtimeId: this.runtimeId,
+            isRunning: this.isRunning,
+            port: this.options.port,
+            kitManagerConnected: this.kitManagerConnection?.readyState === WebSocket.OPEN,
+            connectedClients: this.clients.size,
+            registeredKits: this.registeredKits.size,
+            runningApplications: this.appManager.getRunningApplications().length,
+            uptime: this.isRunning ? process.uptime() : 0
+        };
+    }
+
+    /**
+     * Register a new kit with the runtime
+     */
+    async registerKit(kitInfo) {
+        const kitId = uuidv4();
+        const kit = {
+            id: kitId,
+            ...kitInfo,
+            registeredAt: new Date().toISOString(),
+            runtimeId: this.runtimeId
+        };
+
+        this.registeredKits.set(kitId, kit);
+        this.logger.info('Kit registered', { kitId, kitName: kitInfo.name });
+
+        return kit;
+    }
+
+    /**
+     * Register a new client connection
+     */
+    registerClient(client, clientInfo) {
+        const clientId = uuidv4();
+        client.runtimeId = this.runtimeId;
+        client.clientId = clientId;
+
+        this.clients.set(clientId, {
+            client,
+            info: clientInfo,
+            connectedAt: new Date().toISOString()
+        });
+
+        this.logger.info('Client registered', { clientId, clientInfo });
+        return clientId;
+    }
+
+    /**
+     * Unregister a client connection
+     */
+    unregisterClient(clientId) {
+        const clientInfo = this.clients.get(clientId);
+        if (clientInfo) {
+            clientInfo.client.close();
+            this.clients.delete(clientId);
+            this.logger.info('Client unregistered', { clientId });
+        }
+    }
+
+    // Private methods
+
+    async _initializeDirectories() {
+        const fs = await import('fs-extra');
+        await fs.ensureDir(this.options.dataPath);
+        await fs.ensureDir(`${this.options.dataPath}/applications`);
+        await fs.ensureDir(`${this.options.dataPath}/logs`);
+        await fs.ensureDir(`${this.options.dataPath}/configs`);
+    }
+
+    async _startWebSocketServer() {
+        return new Promise((resolve, reject) => {
+            this.wsServer = new WebSocketServer({
+                port: this.options.port,
+                path: '/runtime'
+            });
+
+            this.wsServer.on('connection', (ws, request) => {
+                this.wsHandler.handleConnection(ws, request);
+            });
+
+            this.wsServer.on('listening', () => {
+                this.logger.info('WebSocket server started', { port: this.options.port });
+                resolve();
+            });
+
+            this.wsServer.on('error', (error) => {
+                this.logger.error('WebSocket server error', { error: error.message });
+                reject(error);
+            });
+        });
+    }
+
+    async _connectToKitManager() {
+        return new Promise((resolve, reject) => {
+            this.logger.info('Connecting to Kit Manager...', { url: this.options.kitManagerUrl });
+
+            this.kitManagerConnection = new WebSocket(this.options.kitManagerUrl);
+
+            this.kitManagerConnection.on('open', () => {
+                this.logger.info('Connected to Kit Manager');
+
+                // Register runtime with Kit Manager
+                this._registerWithKitManager();
+                resolve();
+            });
+
+            this.kitManagerConnection.on('message', (data) => {
+                this._handleKitManagerMessage(data);
+            });
+
+            this.kitManagerConnection.on('error', (error) => {
+                this.logger.error('Kit Manager connection error', { error: error.message });
+                if (!this.kitManagerConnection || this.kitManagerConnection.readyState === WebSocket.CONNECTING) {
+                    reject(error);
+                }
+            });
+
+            this.kitManagerConnection.on('close', () => {
+                this.logger.warn('Kit Manager connection closed');
+                this.kitManagerConnection = null;
+
+                // Attempt to reconnect
+                if (this.isRunning) {
+                    setTimeout(() => {
+                        this._connectToKitManager().catch(error => {
+                            this.logger.error('Failed to reconnect to Kit Manager', { error: error.message });
+                        });
+                    }, 5000);
+                }
+            });
+        });
+    }
+
+    _registerWithKitManager() {
+        const registrationMessage = {
+            type: 'register_runtime',
+            runtimeId: this.runtimeId,
+            name: 'Vehicle Edge Runtime',
+            version: '1.0.0',
+            capabilities: [
+                'python_app_execution',
+                'binary_app_execution',
+                'console_output',
+                'app_status_monitoring'
+            ],
+            endpoints: {
+                websocket: `ws://localhost:${this.options.port}/runtime`
+            }
+        };
+
+        this.kitManagerConnection.send(JSON.stringify(registrationMessage));
+        this.logger.info('Runtime registration sent to Kit Manager');
+    }
+
+    _handleKitManagerMessage(data) {
+        try {
+            const message = JSON.parse(data.toString());
+            this.logger.debug('Received message from Kit Manager', { type: message.type });
+
+            switch (message.type) {
+                case 'registration_confirmed':
+                    this.logger.info('Runtime registration confirmed by Kit Manager');
+                    break;
+                case 'execute_command':
+                    this.wsHandler.handleKitManagerCommand(message);
+                    break;
+                default:
+                    this.logger.warn('Unknown message type from Kit Manager', { type: message.type });
+            }
+        } catch (error) {
+            this.logger.error('Error handling Kit Manager message', { error: error.message });
+        }
+    }
+}
