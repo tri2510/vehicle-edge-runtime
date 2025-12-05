@@ -6,10 +6,22 @@
 # Create log directory if it doesn't exist
 mkdir -p /app/data/logs
 
+# Check if we can write to logs directory
+if [ ! -w /app/data/logs ]; then
+    echo "Warning: Cannot write to /app/data/logs, output will go to stdout/stderr"
+    LOG_REDIRECT=""
+else
+    LOG_REDIRECT="> /app/data/logs/kit-manager.log 2>&1"
+fi
+
 cd /app/Kit-Manager
 
 echo "Starting Kit-Manager on port 3090..."
-npm start > /app/data/logs/kit-manager.log 2>&1 &
+if [ -w /app/data/logs ]; then
+    npm start > /app/data/logs/kit-manager.log 2>&1 &
+else
+    npm start &
+fi
 KIT_MANAGER_PID=$!
 
 sleep 3
@@ -17,7 +29,11 @@ sleep 3
 cd /app
 
 echo "Starting Vehicle Edge Runtime on port 3002..."
-npm start > /app/data/logs/vehicle-edge-runtime.log 2>&1 &
+if [ -w /app/data/logs ]; then
+    npm start > /app/data/logs/vehicle-edge-runtime.log 2>&1 &
+else
+    npm start &
+fi
 RUNTIME_PID=$!
 
 sleep 5

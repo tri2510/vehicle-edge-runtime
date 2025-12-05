@@ -11,6 +11,7 @@
     "test:unit": "node --test tests/unit/**/*.test.js",
     "test:integration": "node --test tests/integration/**/*.test.js",
     "test:e2e": "node --test tests/e2e/**/*.test.js",
+    "test:manual": "node tests/integration/test-client.js && node tests/integration/test-python-app.js",
     "lint": "eslint src/**/*.js tests/**/*.js",
     "lint:fix": "eslint src/**/*.js tests/**/*.js --fix",
     "docker:build": "docker build -t vehicle-edge-runtime .",
@@ -37,6 +38,7 @@
     "js-yaml": "^4.1.0",
     "node-cron": "^3.0.3",
     "semver": "^7.6.0",
+    "socket.io-client": "^4.7.2",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
     "ws": "^8.16.0"

@@ -265,6 +265,9 @@ export class ApplicationManager {
     async _createPythonContainer(options) {
         const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
 
+        // Sanitize executionId for Docker names (remove hyphens)
+        const sanitizedId = executionId.replace(/-/g, '');
+
         // Create container configuration
         const containerConfig = {
             Image: 'python:3.11-slim',
@@ -277,7 +280,7 @@ export class ApplicationManager {
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
-                Binds: [`${appDir}:${workingDir}`],
+                Binds: [`${path.resolve(appDir)}:${workingDir}`],
                 Memory: 512 * 1024 * 1024, // 512MB limit
                 CpuQuota: 50000, // 50% CPU limit
                 NetworkMode: 'bridge',
@@ -286,7 +289,7 @@ export class ApplicationManager {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
                 }
             },
-            name: `vehicle-edge-app-${executionId}`,
+            name: `vehicle-edge-app-${sanitizedId}`,
             AttachStdout: true,
             AttachStderr: true,
             Tty: false
@@ -301,6 +304,9 @@ export class ApplicationManager {
     async _createBinaryContainer(options) {
         const { executionId, appId, appDir, binaryPath, args, env, workingDir } = options;
 
+        // Sanitize executionId for Docker names (remove hyphens)
+        const sanitizedId = executionId.replace(/-/g, '');
+
         // Create container configuration
         const containerConfig = {
             Image: 'alpine:latest',
@@ -312,7 +318,7 @@ export class ApplicationManager {
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
-                Binds: [`${appDir}:${workingDir}`],
+                Binds: [`${path.resolve(appDir)}:${workingDir}`],
                 Memory: 512 * 1024 * 1024, // 512MB limit
                 CpuQuota: 50000, // 50% CPU limit
                 NetworkMode: 'bridge',
@@ -321,7 +327,7 @@ export class ApplicationManager {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
                 }
             },
-            name: `vehicle-edge-app-${executionId}`,
+            name: `vehicle-edge-app-${sanitizedId}`,
             AttachStdout: true,
             AttachStderr: true,
             Tty: false

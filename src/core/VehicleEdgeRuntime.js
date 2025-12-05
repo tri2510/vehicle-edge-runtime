@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
+import { io } from 'socket.io-client';
 import { RuntimeRegistry } from './RuntimeRegistry.js';
 import { ApplicationManager } from '../apps/ApplicationManager.js';
 import { ConsoleManager } from '../console/ConsoleManager.js';
@@ -23,6 +24,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             kitManagerUrl: options.kitManagerUrl || 'ws://localhost:8080',
             logLevel: options.logLevel || 'info',
             dataPath: options.dataPath || './data',
+            skipKitManager: options.skipKitManager || false,
             ...options
         };
 
@@ -68,8 +70,12 @@ export class VehicleEdgeRuntime extends EventEmitter {
             // Start WebSocket server
             await this._startWebSocketServer();
 
-            // Connect to Kit Manager
-            await this._connectToKitManager();
+            // Connect to Kit Manager (if not skipped)
+            if (!this.options.skipKitManager) {
+                await this._connectToKitManager();
+            } else {
+                this.logger.info('Skipping Kit Manager connection (test mode)');
+            }
 
             // Initialize managers
             await this.appManager.initialize();
@@ -238,9 +244,17 @@ export class VehicleEdgeRuntime extends EventEmitter {
         return new Promise((resolve, reject) => {
             this.logger.info('Connecting to Kit Manager...', { url: this.options.kitManagerUrl });
 
-            this.kitManagerConnection = new WebSocket(this.options.kitManagerUrl);
+            // Convert ws:// URL to http:// for Socket.IO client
+            const httpUrl = this.options.kitManagerUrl.replace('ws://', 'http://');
 
-            this.kitManagerConnection.on('open', () => {
+            this.kitManagerConnection = io(httpUrl, {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionDelay: 5000,
+                reconnectionAttempts: Infinity
+            });
+
+            this.kitManagerConnection.on('connect', () => {
                 this.logger.info('Connected to Kit Manager');
 
                 // Register runtime with Kit Manager
@@ -248,51 +262,31 @@ export class VehicleEdgeRuntime extends EventEmitter {
                 resolve();
             });
 
+            this.kitManagerConnection.on('connect_error', (error) => {
+                this.logger.error('Kit Manager connection error', { error: error.message });
+                reject(error);
+            });
+
+            this.kitManagerConnection.on('disconnect', () => {
+                this.logger.warn('Kit Manager connection closed');
+            });
+
+            // Handle incoming messages from Kit Manager
             this.kitManagerConnection.on('message', (data) => {
                 this._handleKitManagerMessage(data);
-            });
-
-            this.kitManagerConnection.on('error', (error) => {
-                this.logger.error('Kit Manager connection error', { error: error.message });
-                if (!this.kitManagerConnection || this.kitManagerConnection.readyState === WebSocket.CONNECTING) {
-                    reject(error);
-                }
-            });
-
-            this.kitManagerConnection.on('close', () => {
-                this.logger.warn('Kit Manager connection closed');
-                this.kitManagerConnection = null;
-
-                // Attempt to reconnect
-                if (this.isRunning) {
-                    setTimeout(() => {
-                        this._connectToKitManager().catch(error => {
-                            this.logger.error('Failed to reconnect to Kit Manager', { error: error.message });
-                        });
-                    }, 5000);
-                }
             });
         });
     }
 
     _registerWithKitManager() {
         const registrationMessage = {
-            type: 'register_runtime',
-            runtimeId: this.runtimeId,
+            kit_id: this.runtimeId,
             name: 'Vehicle Edge Runtime',
-            version: '1.0.0',
-            capabilities: [
-                'python_app_execution',
-                'binary_app_execution',
-                'console_output',
-                'app_status_monitoring'
-            ],
-            endpoints: {
-                websocket: `ws://localhost:${this.options.port}/runtime`
-            }
+            desc: 'Vehicle Edge Runtime for Eclipse Autowrx - Simplified application execution environment',
+            support_apis: ['python_app_execution', 'binary_app_execution', 'console_output', 'app_status_monitoring']
         };
 
-        this.kitManagerConnection.send(JSON.stringify(registrationMessage));
+        this.kitManagerConnection.emit('register_kit', registrationMessage);
         this.logger.info('Runtime registration sent to Kit Manager');
     }
 
