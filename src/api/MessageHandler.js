@@ -36,6 +36,20 @@ export class MessageHandler {
                 return await this.handleConsoleSubscribe(clientId, message);
             case 'console_unsubscribe':
                 return await this.handleConsoleUnsubscribe(clientId, message);
+            case 'subscribe_apis':
+                return await this.handleSubscribeApis(clientId, message);
+            case 'write_signals_value':
+                return await this.handleWriteSignalsValue(message);
+            case 'get_signals_value':
+                return await this.handleGetSignalsValue(message);
+            case 'generate_vehicle_model':
+                return await this.handleGenerateVehicleModel(message);
+            case 'revert_vehicle_model':
+                return await this.handleRevertVehicleModel(message);
+            case 'list_mock_signal':
+                return await this.handleListMockSignal(message);
+            case 'set_mock_signals':
+                return await this.handleSetMockSignals(message);
             case 'report-runtime-state':
                 return await this.handleReportRuntimeState(message);
             case 'ping':
@@ -344,5 +358,274 @@ export class MessageHandler {
             },
             timestamp: new Date().toISOString()
         };
+    }
+
+    // Vehicle Signal Handlers
+
+    async handleSubscribeApis(clientId, message) {
+        const { apis } = message;
+
+        if (!this.runtime.kuksaManager) {
+            return {
+                type: 'error',
+                error: 'Kuksa manager not available',
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        this.logger.info('Subscribing to vehicle APIs', { clientId, apis });
+
+        try {
+            const subscriptionId = await this.runtime.kuksaManager.subscribeToSignals(apis);
+
+            // Store subscription for this client
+            if (!this.runtime.apiSubscriptions) {
+                this.runtime.apiSubscriptions = new Map();
+            }
+            this.runtime.apiSubscriptions.set(clientId, {
+                subscriptionId,
+                apis,
+                subscribedAt: new Date()
+            });
+
+            return {
+                type: 'apis_subscribed',
+                subscriptionId,
+                apis,
+                kit_id: this.runtime.runtimeId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to subscribe to APIs', { clientId, apis, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to subscribe to APIs: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleWriteSignalsValue(message) {
+        const { data } = message;
+
+        if (!this.runtime.kuksaManager) {
+            return {
+                type: 'error',
+                error: 'Kuksa manager not available',
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        this.logger.info('Writing vehicle signal values', { signalUpdates: Object.keys(data) });
+
+        try {
+            const response = await this.runtime.kuksaManager.setSignalValues(data);
+
+            return {
+                type: 'signals_written',
+                response,
+                kit_id: this.runtime.runtimeId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to write signal values', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to write signal values: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGetSignalsValue(message) {
+        const { apis } = message;
+
+        if (!this.runtime.kuksaManager) {
+            return {
+                type: 'error',
+                error: 'Kuksa manager not available',
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        this.logger.info('Getting vehicle signal values', { apis });
+
+        try {
+            const values = await this.runtime.kuksaManager.getSignalValues(apis);
+
+            return {
+                type: 'signals_value_response',
+                result: values,
+                kit_id: this.runtime.runtimeId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get signal values', { apis, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to get signal values: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGenerateVehicleModel(message) {
+        const { data } = message;
+
+        this.logger.info('Generating vehicle model', { vssData: data });
+
+        try {
+            const fs = await import('fs-extra');
+            const vssPath = `${this.runtime.options.dataPath}/configs/vss.json`;
+
+            // Parse and validate VSS data
+            const vssData = JSON.parse(data);
+            await fs.writeFile(vssPath, JSON.stringify(vssData, null, 2));
+
+            // Reload VSS in Kuksa manager
+            if (this.runtime.kuksaManager) {
+                await this.runtime.kuksaManager._loadVSSConfiguration();
+            }
+
+            return {
+                type: 'vehicle_model_generated',
+                success: true,
+                vssPath,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to generate vehicle model', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to generate vehicle model: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleRevertVehicleModel(message) {
+        this.logger.info('Reverting vehicle model to default');
+
+        try {
+            // Create default VSS again
+            if (this.runtime.kuksaManager) {
+                this.runtime.kuksaManager.vssData = this.runtime.kuksaManager._createDefaultVSS();
+
+                const fs = await import('fs-extra');
+                const vssPath = `${this.runtime.options.dataPath}/configs/vss.json`;
+                await fs.writeFile(vssPath, JSON.stringify(this.runtime.kuksaManager.vssData, null, 2));
+            }
+
+            return {
+                type: 'vehicle_model_reverted',
+                success: true,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to revert vehicle model', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to revert vehicle model: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleListMockSignal(message) {
+        this.logger.info('Listing mock signals');
+
+        try {
+            const vssTree = this.runtime.kuksaManager?.getVSSTree();
+            const cachedValues = this.runtime.kuksaManager?.getCachedSignalValues() || {};
+
+            // Format mock signals list
+            const mockSignals = [];
+            if (vssTree) {
+                this._extractSignalsFromVSS(vssTree, '', mockSignals);
+            }
+
+            return {
+                type: 'mock_signal_list',
+                data: mockSignals.map(signal => ({
+                    ...signal,
+                    value: cachedValues[signal.path]?.value || null
+                })),
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to list mock signals', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to list mock signals: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleSetMockSignals(message) {
+        const { data } = message;
+
+        if (!this.runtime.kuksaManager) {
+            return {
+                type: 'error',
+                error: 'Kuksa manager not available',
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        this.logger.info('Setting mock signals', { signalCount: data.length });
+
+        try {
+            const signalUpdates = {};
+            for (const signal of data) {
+                signalUpdates[signal.name] = signal.value;
+            }
+
+            await this.runtime.kuksaManager.setSignalValues(signalUpdates);
+
+            return {
+                type: 'mock_signals_set',
+                success: true,
+                signalCount: data.length,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to set mock signals', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to set mock signals: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    _extractSignalsFromVSS(vssNode, basePath, signals) {
+        for (const [key, value] of Object.entries(vssNode)) {
+            const path = basePath ? `${basePath}.${key}` : key;
+
+            if (value.datatype) {
+                // This is a signal
+                signals.push({
+                    path,
+                    name: path,
+                    datatype: value.datatype,
+                    type: value.type,
+                    unit: value.unit,
+                    description: value.description,
+                    min: value.min,
+                    max: value.max
+                });
+            } else if (typeof value === 'object') {
+                // This is a branch, recurse
+                this._extractSignalsFromVSS(value, path, signals);
+            }
+        }
     }
 }

@@ -73,6 +73,20 @@ export class WebSocketHandler {
                 return this.messageHandler.handleConsoleSubscribe(message);
             case 'console_unsubscribe':
                 return this.messageHandler.handleConsoleUnsubscribe(message);
+            case 'subscribe_apis':
+                return this.messageHandler.handleSubscribeApis(message);
+            case 'write_signals_value':
+                return this.messageHandler.handleWriteSignalsValue(message);
+            case 'get_signals_value':
+                return this.messageHandler.handleGetSignalsValue(message);
+            case 'generate_vehicle_model':
+                return this.messageHandler.handleGenerateVehicleModel(message);
+            case 'revert_vehicle_model':
+                return this.messageHandler.handleRevertVehicleModel(message);
+            case 'list_mock_signal':
+                return this.messageHandler.handleListMockSignal(message);
+            case 'set_mock_signals':
+                return this.messageHandler.handleSetMockSignals(message);
             case 'report-runtime-state':
                 return this.messageHandler.handleReportRuntimeState(message);
             default:

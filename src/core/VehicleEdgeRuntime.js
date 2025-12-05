@@ -12,6 +12,8 @@ import { RuntimeRegistry } from './RuntimeRegistry.js';
 import { ApplicationManager } from '../apps/ApplicationManager.js';
 import { ConsoleManager } from '../console/ConsoleManager.js';
 import { WebSocketHandler } from '../api/WebSocketHandler.js';
+import { KuksaManager } from '../vehicle/KuksaManager.js';
+import { CredentialManager } from '../vehicle/CredentialManager.js';
 import { Logger } from '../utils/Logger.js';
 import { HealthCheck } from '../utils/HealthCheck.js';
 
@@ -22,9 +24,11 @@ export class VehicleEdgeRuntime extends EventEmitter {
         this.options = {
             port: options.port || 3002,
             kitManagerUrl: options.kitManagerUrl || 'ws://localhost:8080',
+            kuksaUrl: options.kuksaUrl || 'localhost:55555',
             logLevel: options.logLevel || 'info',
             dataPath: options.dataPath || './data',
             skipKitManager: options.skipKitManager || false,
+            skipKuksa: options.skipKuksa || false,
             ...options
         };
 
@@ -39,6 +43,15 @@ export class VehicleEdgeRuntime extends EventEmitter {
         this.registry = new RuntimeRegistry(this.options);
         this.appManager = new ApplicationManager(this.options);
         this.consoleManager = new ConsoleManager(this.options);
+        this.kuksaManager = new KuksaManager({
+            kuksaUrl: this.options.kuksaUrl,
+            vssPath: `${this.options.dataPath}/configs/vss.json`,
+            logLevel: this.options.logLevel
+        });
+        this.credentialManager = new CredentialManager({
+            credentialPath: `${this.options.dataPath}/configs/credentials.json`,
+            logLevel: this.options.logLevel
+        });
         this.wsHandler = new WebSocketHandler(this);
 
         // Health check
@@ -83,6 +96,18 @@ export class VehicleEdgeRuntime extends EventEmitter {
             await this.consoleManager.initialize();
             this.consoleManager.setRuntime(this);
 
+            // Initialize Kuksa Manager (if not skipped)
+            if (!this.options.skipKuksa) {
+                await this.kuksaManager.initialize();
+                this._setupKuksaEventHandlers();
+            } else {
+                this.logger.info('Skipping Kuksa integration (test mode)');
+            }
+
+            // Initialize Credential Manager
+            await this.credentialManager.initialize();
+            this._setupCredentialEventHandlers();
+
             // Initialize health check
             await this.healthCheck.start();
 
@@ -124,6 +149,16 @@ export class VehicleEdgeRuntime extends EventEmitter {
                 this.kitManagerConnection.close();
             }
 
+            // Stop Kuksa Manager
+            if (this.kuksaManager) {
+                await this.kuksaManager.stop();
+            }
+
+            // Stop Credential Manager
+            if (this.credentialManager) {
+                await this.credentialManager.stop();
+            }
+
             // Stop all running applications
             await this.appManager.stopAllApplications();
 
@@ -152,6 +187,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             isRunning: this.isRunning,
             port: this.options.port,
             kitManagerConnected: this.kitManagerConnection?.readyState === WebSocket.OPEN,
+            kuksaConnected: this.kuksaManager?.getStatus().isConnected || false,
             connectedClients: this.clients.size,
             registeredKits: this.registeredKits.size,
             runningApplications: this.appManager.getRunningApplications().length,
@@ -282,8 +318,16 @@ export class VehicleEdgeRuntime extends EventEmitter {
         const registrationMessage = {
             kit_id: this.runtimeId,
             name: 'Vehicle Edge Runtime',
-            desc: 'Vehicle Edge Runtime for Eclipse Autowrx - Simplified application execution environment',
-            support_apis: ['python_app_execution', 'binary_app_execution', 'console_output', 'app_status_monitoring']
+            desc: 'Vehicle Edge Runtime for Eclipse Autowrx - Vehicle application execution with Kuksa integration',
+            support_apis: [
+                'python_app_execution',
+                'binary_app_execution',
+                'console_output',
+                'app_status_monitoring',
+                'vehicle_signals',
+                'vss_management',
+                'signal_subscription'
+            ]
         };
 
         this.kitManagerConnection.emit('register_kit', registrationMessage);
@@ -307,6 +351,86 @@ export class VehicleEdgeRuntime extends EventEmitter {
             }
         } catch (error) {
             this.logger.error('Error handling Kit Manager message', { error: error.message });
+        }
+    }
+
+    _setupKuksaEventHandlers() {
+        // Handle signal updates from Kuksa
+        this.kuksaManager.on('signalsUpdated', (signals) => {
+            this.logger.debug('Vehicle signals updated', { signalCount: Object.keys(signals).length });
+
+            // Broadcast signal updates to all connected clients
+            const signalUpdateMessage = {
+                cmd: 'apis-value',
+                kit_id: this.runtimeId,
+                result: signals,
+                timestamp: new Date().toISOString()
+            };
+
+            for (const [clientId, clientInfo] of this.clients) {
+                try {
+                    clientInfo.client.send(JSON.stringify(signalUpdateMessage));
+                } catch (error) {
+                    this.logger.error('Failed to send signal update to client', { clientId, error: error.message });
+                }
+            }
+        });
+
+        // Handle Kuksa connection events
+        this.kuksaManager.on('connected', () => {
+            this.logger.info('Kuksa databroker connected');
+        });
+
+        this.kuksaManager.on('disconnected', () => {
+            this.logger.warn('Kuksa databroker disconnected');
+        });
+
+        this.kuksaManager.on('error', (error) => {
+            this.logger.error('Kuksa databroker error', { error: error.message });
+        });
+    }
+
+    _setupCredentialEventHandlers() {
+        // Handle credential events
+        this.credentialManager.on('credentialsRegistered', ({ vehicleId }) => {
+            this.logger.info('Vehicle credentials registered', { vehicleId });
+        });
+
+        this.credentialManager.on('credentialsRevoked', ({ vehicleId }) => {
+            this.logger.info('Vehicle credentials revoked', { vehicleId });
+
+            // Stop applications using this vehicle's credentials
+            this._stopApplicationsForVehicle(vehicleId);
+        });
+
+        this.credentialManager.on('tokenRefreshed', ({ vehicleId }) => {
+            this.logger.info('Vehicle token refreshed', { vehicleId });
+        });
+
+        this.credentialManager.on('error', (error) => {
+            this.logger.error('Credential manager error', { error: error.message });
+        });
+    }
+
+    _stopApplicationsForVehicle(vehicleId) {
+        // Find and stop applications using this vehicle's credentials
+        const runningApps = this.appManager.getRunningApplications();
+
+        for (const app of runningApps) {
+            if (app.vehicleId === vehicleId) {
+                this.logger.info('Stopping application due to credential revocation', {
+                    applicationId: app.appId,
+                    vehicleId
+                });
+
+                this.appManager.stopApplication(app.appId).catch(error => {
+                    this.logger.error('Failed to stop application after credential revocation', {
+                        applicationId: app.appId,
+                        vehicleId,
+                        error: error.message
+                    });
+                });
+            }
         }
     }
 }
