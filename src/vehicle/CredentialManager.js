@@ -287,7 +287,8 @@ export class CredentialManager extends EventEmitter {
             }
         } catch (error) {
             this.logger.error('Failed to load credentials', { error: error.message });
-            throw error;
+            // Fallback to in-memory credentials if file operations fail
+            this.logger.warn('Using in-memory credentials due to file system error');
         }
     }
 
@@ -309,7 +310,8 @@ export class CredentialManager extends EventEmitter {
             this.logger.debug('Credentials saved successfully');
         } catch (error) {
             this.logger.error('Failed to save credentials', { error: error.message });
-            throw error;
+            // Don't throw error for credential saving to allow runtime to continue
+            this.logger.warn('Credentials will remain in memory only due to file system error');
         }
     }
 
