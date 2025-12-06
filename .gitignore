@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Runtime data
+data/
+logs/
+
+# Test outputs and reports
+test-report.txt
+*.log
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.dockerignore
