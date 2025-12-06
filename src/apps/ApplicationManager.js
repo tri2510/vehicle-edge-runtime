@@ -33,12 +33,17 @@ export class ApplicationManager {
 
     setRuntime(runtime) {
         this.runtime = runtime;
+        
+        // Initialize credential manager if runtime has one
+        if (runtime.credentialManager) {
+            this.credentialManager = runtime.credentialManager;
+        }
     }
 
     async runPythonApp(options) {
-        const { executionId, appId, code, entryPoint, env, workingDir } = options;
+        const { executionId, appId, code, entryPoint, env, workingDir, vehicleId } = options;
 
-        this.logger.info('Starting Python application', { executionId, appId });
+        this.logger.info('Starting Python application', { executionId, appId, vehicleId });
 
         try {
             // Create application directory
@@ -49,15 +54,38 @@ export class ApplicationManager {
             const pythonFile = path.join(appDir, entryPoint);
             await fs.writeFile(pythonFile, code);
 
-            // Create Docker container
-            const container = await this._createPythonContainer({
+            // Prepare container options with vehicle credentials if available
+            let containerOptions = {
                 executionId,
                 appId,
                 appDir,
                 entryPoint,
-                env,
+                env: env || {},
                 workingDir
-            });
+            };
+
+            // Inject vehicle credentials if vehicle ID is provided
+            if (vehicleId && this.credentialManager) {
+                try {
+                    containerOptions = await this.credentialManager.injectCredentialsIntoApplication(
+                        vehicleId, 
+                        appId, 
+                        containerOptions,
+                        ['vehicle_signals', 'vehicle_actuators']
+                    );
+                    this.logger.info('Vehicle credentials injected', { vehicleId, appId });
+                } catch (error) {
+                    this.logger.warn('Failed to inject vehicle credentials', { 
+                        vehicleId, 
+                        appId, 
+                        error: error.message 
+                    });
+                    // Continue without credentials rather than failing
+                }
+            }
+
+            // Create Docker container
+            const container = await this._createPythonContainer(containerOptions);
 
             // Store application info
             const appInfo = {
@@ -97,25 +125,48 @@ export class ApplicationManager {
     }
 
     async runBinaryApp(options) {
-        const { executionId, appId, binaryPath, args, env, workingDir } = options;
+        const { executionId, appId, binaryPath, args, env, workingDir, vehicleId } = options;
 
-        this.logger.info('Starting binary application', { executionId, appId, binaryPath });
+        this.logger.info('Starting binary application', { executionId, appId, binaryPath, vehicleId });
 
         try {
             // Create application directory
             const appDir = path.join(this.appStorage, 'binary', executionId);
             await fs.ensureDir(appDir);
 
-            // Create Docker container for binary execution
-            const container = await this._createBinaryContainer({
+            // Prepare container options with vehicle credentials if available
+            let containerOptions = {
                 executionId,
                 appId,
                 appDir,
                 binaryPath,
-                args,
-                env,
+                args: args || [],
+                env: env || {},
                 workingDir
-            });
+            };
+
+            // Inject vehicle credentials if vehicle ID is provided
+            if (vehicleId && this.credentialManager) {
+                try {
+                    containerOptions = await this.credentialManager.injectCredentialsIntoApplication(
+                        vehicleId, 
+                        appId, 
+                        containerOptions,
+                        ['vehicle_signals', 'vehicle_actuators']
+                    );
+                    this.logger.info('Vehicle credentials injected', { vehicleId, appId });
+                } catch (error) {
+                    this.logger.warn('Failed to inject vehicle credentials', { 
+                        vehicleId, 
+                        appId, 
+                        error: error.message 
+                    });
+                    // Continue without credentials rather than failing
+                }
+            }
+
+            // Create Docker container for binary execution
+            const container = await this._createBinaryContainer(containerOptions);
 
             // Store application info
             const appInfo = {

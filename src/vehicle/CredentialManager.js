@@ -166,9 +166,9 @@ export class CredentialManager extends EventEmitter {
     /**
      * Inject credentials into application environment
      */
-    async injectCredentialsIntoApplication(vehicleId, applicationId, containerOptions = {}) {
+    async injectCredentialsIntoApplication(vehicleId, applicationId, containerOptions = {}, requiredScopes = ['vehicle_signals']) {
         try {
-            const accessToken = await this.getAccessTokenForApplication(vehicleId, applicationId);
+            const accessToken = await this.getAccessTokenForApplication(vehicleId, applicationId, requiredScopes);
 
             // Prepare environment variables for credential injection
             const credentialEnv = {
