@@ -216,8 +216,8 @@ async function runAPIVerification() {
         });
         logTest(
             'Deploy Request Processing',
-            deployResponse.type === 'error' && deployResponse.error.includes('Failed to deploy application'),
-            'Deploy request command recognized and processed'
+            deployResponse.type === 'deploy_request-response',
+            'Deploy request command recognized and processed correctly'
         );
         ws.close();
         
@@ -305,8 +305,8 @@ async function runAPIVerification() {
         });
         logTest(
             'Console Subscription Command',
-            consoleResponse.type === 'error', // Expected to fail since execution doesn't exist
-            'Console subscription command implemented'
+            consoleResponse.type === 'console_subscribed',
+            'Console subscription command implemented correctly'
         );
         ws.close();
         
