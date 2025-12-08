@@ -49,18 +49,34 @@ echo ""
 if ! docker exec "$CONTAINER" command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing..."
     docker exec "$CONTAINER" bash -c "
+        export DEBIAN_FRONTEND=noninteractive &&
         apt-get update &&
         apt-get install -y ca-certificates curl gnupg &&
-        install -m 0755 -d /etc/apt/keyrings &&
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg &&
-        chmod a+r /etc/apt/keyrings/docker.gpg &&
-        echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$VERSION_CODENAME\") stable\" > /etc/apt/sources.list.d/docker.list &&
-        apt-get update &&
-        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        install -m 0755 -d /etc/apt/keyrings
+
+        # Try GPG method first
+        if curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null; then
+            chmod a+r /etc/apt/keyrings/docker.gpg &&
+            echo \"deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(. /etc/os-release && echo \"\$VERSION_CODENAME\") stable\" > /etc/apt/sources.list.d/docker.list &&
+            apt-get update &&
+            apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        else
+            echo \"GPG failed, trying alternative installation...\" &&
+            # Alternative: Use convenience script
+            curl -fsSL https://get.docker.com -o get-docker.sh &&
+            sh get-docker.sh --dry-run &&
+            curl -fsSL https://get.docker.com | sh
+        fi
     " || {
         echo "❌ Failed to install Docker"
+        echo "This might be due to container restrictions"
+        echo "Try using Native mode instead: ./2b-start-native.sh"
         exit 1
     }
+
+    # Add pi user to docker group for permissions
+    echo "Setting Docker permissions..."
+    docker exec "$CONTAINER" bash -c "usermod -aG docker pi" || echo "User group modification failed (may already exist)"
 
     # Start Docker daemon
     echo "Starting Docker daemon..."
@@ -86,7 +102,7 @@ echo "Building Docker images..."
 echo "Building Kit Manager image..."
 docker exec "$CONTAINER" bash -c "
     cd /home/pi/vehicle-edge-runtime/workspace/Kit-Manager &&
-    su pi -c 'docker build -t kit-manager:sim .'
+    docker build -t kit-manager:sim .
 " || {
     echo "❌ Failed to build Kit Manager image"
     exit 1
@@ -96,7 +112,7 @@ docker exec "$CONTAINER" bash -c "
 echo "Building Vehicle Edge Runtime image..."
 docker exec "$CONTAINER" bash -c "
     cd /home/pi/vehicle-edge-runtime/workspace &&
-    su pi -c 'docker build -f Dockerfile.runtime -t vehicle-edge-runtime:sim .'
+    docker build -f Dockerfile.runtime -t vehicle-edge-runtime:sim .
 " || {
     echo "❌ Failed to build Vehicle Edge Runtime image"
     exit 1
@@ -108,7 +124,7 @@ echo "Starting Docker containers..."
 
 # Create network
 docker exec "$CONTAINER" bash -c "
-    su pi -c 'docker network create vehicle-edge-network 2>/dev/null || true'
+    docker network create vehicle-edge-network 2>/dev/null || true
 "
 
 # Create data directory
@@ -120,11 +136,11 @@ docker exec "$CONTAINER" bash -c "
 # Start Kit Manager container
 echo "Starting Kit Manager container..."
 docker exec "$CONTAINER" bash -c "
-    su pi -c 'docker run -d \
+    docker run -d \
         --name kit-manager \
         --network vehicle-edge-network \
         -p 3090:3090 \
-        kit-manager:sim'
+        kit-manager:sim
 " || {
     echo "❌ Failed to start Kit Manager container"
     exit 1
@@ -136,7 +152,7 @@ sleep 5
 # Start Vehicle Edge Runtime container
 echo "Starting Vehicle Edge Runtime container..."
 docker exec "$CONTAINER" bash -c "
-    su pi -c 'docker run -d \
+    docker run -d \
         --name vehicle-edge-runtime \
         --network vehicle-edge-network \
         -p 3002:3002 \
@@ -148,7 +164,7 @@ docker exec "$CONTAINER" bash -c "
         -e LOG_LEVEL=info \
         -e DATA_PATH=/app/data \
         -e SKIP_KUKSA=true \
-        vehicle-edge-runtime:sim'
+        vehicle-edge-runtime:sim
 " || {
     echo "❌ Failed to start Vehicle Edge Runtime container"
     exit 1
