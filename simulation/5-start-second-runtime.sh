@@ -43,7 +43,7 @@ if ! curl -s --max-time 3 http://localhost:3090/listAllKits >/dev/null 2>&1; the
     print_status "ERROR" "Kit Manager is not accessible"
     echo ""
     echo "🚀 Make sure Kit Manager is running:"
-    echo "   cd simulation && ./2a-start-docker.sh"
+    echo "   cd simulation && ./1a-start-kit-manager.sh"
     exit 1
 fi
 
