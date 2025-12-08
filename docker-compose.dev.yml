@@ -1,0 +1,62 @@
+# Copyright (c) 2025 Eclipse Foundation.
+#
+# This program and the accompanying materials are made available under the
+# terms of the MIT License which is available at
+# https://opensource.org/licenses/MIT.
+#
+# SPDX-License-Identifier: MIT
+
+version: '3.8'
+
+services:
+  vehicle-edge-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3002:3002"  # Vehicle Edge Runtime WebSocket
+      - "3090:3090"  # Kit-Manager WebSocket
+      - "3003:3003"  # Health Check
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./Kit-Manager:/app/Kit-Manager
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - LOG_LEVEL=debug
+      - KIT_MANAGER_URL=ws://localhost:3090
+      - DATA_PATH=/app/data
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - vehicle-edge-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - vehicle-edge-network
+
+  # Optional: Python app execution environment
+  python-executor:
+    image: python:3.11-slim
+    command: tail -f /dev/null
+    volumes:
+      - python-apps:/app
+    networks:
+      - vehicle-edge-network
+
+volumes:
+  redis-data:
+  python-apps:
+
+networks:
+  vehicle-edge-network:
+    driver: bridge
