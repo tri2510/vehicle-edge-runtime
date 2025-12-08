@@ -24,6 +24,10 @@ export class MessageHandler {
                 return await this.handleRunPythonApp(message);
             case 'run_binary_app':
                 return await this.handleRunBinaryApp(message);
+            case 'run_rust_app':
+                return await this.handleRunRustApp(message);
+            case 'run_cpp_app':
+                return await this.handleRunCppApp(message);
             case 'stop_app':
                 return await this.handleStopApp(message);
             case 'get_app_status':
@@ -50,8 +54,20 @@ export class MessageHandler {
                 return await this.handleListMockSignal(message);
             case 'set_mock_signals':
                 return await this.handleSetMockSignals(message);
-            case 'report-runtime-state':
-                return await this.handleReportRuntimeState(message);
+            case 'deploy_request':
+            case 'deploy-request':
+                return await this.handleDeployRequest(message);
+            case 'list_deployed_apps':
+                return await this.handleListDeployedApps(message);
+            case 'manage_app':
+                return await this.handleManageApp(message);
+            case 'check_signal_conflicts':
+                return await this.handleCheckSignalConflicts(message);
+            case 'get_vss_config':
+                return await this.handleGetVssConfig(message);
+            case 'get-runtime-info':
+            case 'get_runtime_info':
+                return await this.handleGetRuntimeInfo(message);
             case 'ping':
                 return { type: 'pong', timestamp: new Date().toISOString() };
             default:
@@ -112,9 +128,9 @@ export class MessageHandler {
     }
 
     async handleRunPythonApp(message) {
-        const { appId, code, entryPoint, env, workingDir } = message;
+        const { appId, code, entryPoint, env, workingDir, vehicleId } = message;
 
-        this.logger.info('Running Python application', { appId });
+        this.logger.info('Running Python application', { appId, vehicleId });
 
         try {
             const executionId = uuidv4();
@@ -124,7 +140,8 @@ export class MessageHandler {
                 code,
                 entryPoint: entryPoint || 'main.py',
                 env: env || {},
-                workingDir: workingDir || '/app'
+                workingDir: workingDir || '/app',
+                vehicleId
             });
 
             return {
@@ -147,9 +164,9 @@ export class MessageHandler {
     }
 
     async handleRunBinaryApp(message) {
-        const { appId, binaryPath, args, env, workingDir } = message;
+        const { appId, binaryPath, args, env, workingDir, vehicleId } = message;
 
-        this.logger.info('Running binary application', { appId, binaryPath });
+        this.logger.info('Running binary application', { appId, binaryPath, vehicleId });
 
         try {
             const executionId = uuidv4();
@@ -159,7 +176,8 @@ export class MessageHandler {
                 binaryPath,
                 args: args || [],
                 env: env || {},
-                workingDir: workingDir || '/app'
+                workingDir: workingDir || '/app',
+                vehicleId
             });
 
             return {
@@ -627,5 +645,363 @@ export class MessageHandler {
                 this._extractSignalsFromVSS(value, path, signals);
             }
         }
+    }
+
+    // Additional Command Handlers for Frontend Compatibility
+
+    async handleRunRustApp(message) {
+        // For simplified runtime, we treat Rust apps as binary apps
+        // Frontend should handle compilation itself
+        this.logger.info('Running Rust application (treated as binary)', { appId: message.appId });
+        
+        // Convert to binary app execution
+        return await this.handleRunBinaryApp({
+            ...message,
+            binaryPath: '/app/target/release/app',
+            env: {
+                ...message.env,
+                RUST_LOG: 'info'
+            }
+        });
+    }
+
+    async handleRunCppApp(message) {
+        // For simplified runtime, we treat C++ apps as binary apps
+        // Frontend should handle compilation itself
+        this.logger.info('Running C++ application (treated as binary)', { appId: message.appId });
+        
+        // Convert to binary app execution
+        return await this.handleRunBinaryApp({
+            ...message,
+            binaryPath: '/app/build/app',
+            env: message.env
+        });
+    }
+
+    async handleDeployRequest(message) {
+        const { code, prototype, username, disable_code_convert = false, vehicleId } = message;
+        
+        this.logger.info('Processing deploy request', { 
+            appId: prototype?.id || 'unknown', 
+            appName: prototype?.name,
+            disable_code_convert,
+            vehicleId
+        });
+
+        try {
+            // For simplified runtime, deploy_request just runs the app directly
+            // Frontend handles the code conversion
+            const executionId = uuidv4();
+            const appId = prototype?.id || `deploy_${Date.now()}`;
+            
+            // Determine app type and run accordingly
+            let result;
+            if (prototype?.language === 'python' || code.includes('import ') || code.includes('def ')) {
+                result = await this.runtime.appManager.runPythonApp({
+                    executionId,
+                    appId,
+                    code: disable_code_convert ? code : this._convertPythonCode(code),
+                    entryPoint: 'main.py',
+                    env: {
+                        APP_NAME: prototype?.name || 'Deployed App',
+                        USER_NAME: username || 'anonymous'
+                    },
+                    workingDir: '/app',
+                    vehicleId
+                });
+            } else {
+                // Handle as binary deployment
+                result = await this.runtime.appManager.runBinaryApp({
+                    executionId,
+                    appId,
+                    binaryPath: code, // Assume code contains binary path or URL
+                    args: [],
+                    env: {
+                        APP_NAME: prototype?.name || 'Deployed App',
+                        USER_NAME: username || 'anonymous'
+                    },
+                    workingDir: '/app',
+                    vehicleId
+                });
+            }
+
+            return {
+                type: 'deploy_request-response',
+                cmd: 'deploy_request',
+                executionId,
+                appId,
+                status: result.status,
+                result: 'Application deployed and started successfully',
+                isDone: true,
+                code: 0,
+                kit_id: this.runtime.runtimeId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to deploy application', { error: error.message });
+            return {
+                type: 'deploy_request-response',
+                cmd: 'deploy_request',
+                error: 'Failed to deploy application: ' + error.message,
+                isDone: true,
+                code: 1,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleListDeployedApps(message) {
+        this.logger.info('Listing deployed applications');
+
+        try {
+            const runningApps = await this.runtime.appManager.getRunningApplications();
+            
+            // Format for frontend compatibility
+            const apps = runningApps.map(app => ({
+                app_id: app.executionId,
+                name: app.appId,
+                version: '1.0.0',
+                status: app.status,
+                deploy_time: app.startTime,
+                auto_start: true,
+                resources: {
+                    cpu_limit: '50%',
+                    memory_limit: '512MB'
+                }
+            }));
+
+            return {
+                type: 'list_deployed_apps-response',
+                apps,
+                total_count: apps.length,
+                running_count: apps.filter(app => app.status === 'running').length,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to list deployed apps', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to list deployed apps: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleManageApp(message) {
+        const { app_id, action, force = false } = message;
+
+        this.logger.info('Managing application', { app_id, action });
+
+        try {
+            let result;
+            
+            switch (action) {
+                case 'start':
+                    // For simplicity, we don't support start from stopped state
+                    throw new Error('Starting stopped applications not supported');
+                    
+                case 'stop':
+                    result = await this.runtime.appManager.stopApplication(app_id);
+                    break;
+                    
+                case 'restart':
+                    // Get current app info first, then stop and restart
+                    // This is a simplified implementation
+                    result = await this.runtime.appManager.stopApplication(app_id);
+                    // In a full implementation, we would restart with saved configuration
+                    break;
+                    
+                case 'remove':
+                    result = await this.runtime.appManager.stopApplication(app_id);
+                    break;
+                    
+                default:
+                    throw new Error(`Unknown action: ${action}`);
+            }
+
+            return {
+                type: 'manage_app-response',
+                app_id,
+                action,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to manage application', { app_id, action, error: error.message });
+            return {
+                type: 'error',
+                error: `Failed to ${action} application: ${error.message}`,
+                app_id,
+                action,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleCheckSignalConflicts(message) {
+        const { app_id, signals } = message;
+
+        this.logger.info('Checking signal conflicts', { app_id, signalCount: signals?.length });
+
+        try {
+            if (!this.runtime.kuksaManager) {
+                return {
+                    type: 'check_signal_conflicts-response',
+                    deployment_precheck: {
+                        app_id,
+                        signals_required: signals.map(signal => ({
+                            signal: signal.signal || signal.path,
+                            access: signal.access || 'read',
+                            conflict: false
+                        })),
+                        deployment_approved: true,
+                        conflicts_found: 0,
+                        recommended_actions: []
+                    },
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Validate signals against VSS
+            const validatedSignals = [];
+            for (const signal of signals) {
+                const signalPath = signal.signal || signal.path;
+                try {
+                    await this.runtime.kuksaManager.validateSignalPaths([signalPath]);
+                    validatedSignals.push({
+                        signal: signalPath,
+                        access: signal.access || 'read',
+                        conflict: false
+                    });
+                } catch (error) {
+                    validatedSignals.push({
+                        signal: signalPath,
+                        access: signal.access || 'read',
+                        conflict: {
+                            conflict_type: 'invalid_signal_path',
+                            error: error.message,
+                            can_deploy: false
+                        }
+                    });
+                }
+            }
+
+            const conflicts = validatedSignals.filter(s => s.conflict);
+            const deploymentApproved = conflicts.length === 0;
+
+            return {
+                type: 'check_signal_conflicts-response',
+                deployment_precheck: {
+                    app_id,
+                    signals_required: validatedSignals,
+                    deployment_approved: deploymentApproved,
+                    conflicts_found: conflicts.length,
+                    recommended_actions: conflicts.map(c => `Fix signal: ${c.signal}`)
+                },
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to check signal conflicts', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to check signal conflicts: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGetVssConfig(message) {
+        this.logger.info('Getting VSS configuration');
+
+        try {
+            let vssConfig;
+            
+            if (this.runtime.kuksaManager) {
+                vssConfig = {
+                    central_vss_url: this.runtime.options.kuksaUrl || 'localhost:55555',
+                    local_cache: `${this.runtime.options.dataPath}/configs/vss.json`,
+                    refresh_interval: 3600,
+                    fallback_config: `${this.runtime.options.dataPath}/configs/vss_backup.json`
+                };
+            } else {
+                vssConfig = {
+                    central_vss_url: null,
+                    local_cache: `${this.runtime.options.dataPath}/configs/vss.json`,
+                    refresh_interval: 3600,
+                    fallback_config: `${this.runtime.options.dataPath}/configs/vss_backup.json`
+                };
+            }
+
+            return {
+                type: 'get_vss_config-response',
+                vss_config: vssConfig,
+                last_updated: new Date().toISOString(),
+                signal_count: this.runtime.kuksaManager?.signalValues?.size || 0,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get VSS config', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to get VSS config: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGetRuntimeInfo(message) {
+        this.logger.debug('Getting runtime info');
+
+        try {
+            const runningApps = await this.runtime.appManager.getRunningApplications();
+            const state = this.runtime.getStatus();
+
+            // Format for frontend compatibility
+            const lsOfRunner = runningApps.map(app => ({
+                appName: app.appId,
+                request_from: 'frontend',
+                from: new Date(app.startTime).getTime()
+            }));
+
+            const lsOfApiSubscriber = {};
+            if (this.runtime.apiSubscriptions) {
+                for (const [clientId, subscription] of this.runtime.apiSubscriptions) {
+                    lsOfApiSubscriber[clientId] = {
+                        apis: subscription.apis,
+                        from: subscription.subscribedAt.getTime()
+                    };
+                }
+            }
+
+            return {
+                type: 'get-runtime-info-response',
+                kit_id: this.runtime.runtimeId,
+                data: {
+                    lsOfRunner,
+                    lsOfApiSubscriber
+                },
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get runtime info', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to get runtime info: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    // Helper method for code conversion
+    _convertPythonCode(code) {
+        // Simple code conversion - in real implementation this would use the converter
+        // For now, just return as-is since frontend handles conversion
+        return code;
     }
 }

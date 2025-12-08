@@ -14,6 +14,7 @@ config();
 const PORT = process.env.PORT || 3002;
 const KIT_MANAGER_URL = process.env.KIT_MANAGER_URL || 'ws://localhost:8080';
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
+const SKIP_KIT_MANAGER = process.env.SKIP_KIT_MANAGER === 'true';
 
 async function main() {
     try {
@@ -25,7 +26,8 @@ async function main() {
         const runtime = new VehicleEdgeRuntime({
             port: PORT,
             kitManagerUrl: KIT_MANAGER_URL,
-            logLevel: LOG_LEVEL
+            logLevel: LOG_LEVEL,
+            skipKitManager: SKIP_KIT_MANAGER
         });
 
         await runtime.start();
