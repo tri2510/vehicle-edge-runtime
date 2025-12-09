@@ -34,10 +34,16 @@ temp/
 # Docker
 .dockerignore
 
-# Simulation binary files
-simulation/pi-dist/*.qcow2
-simulation/pi-dist/*.img
-simulation/pi-dist/*.iso
-simulation/*.qcow2
-simulation/*.img
-simulation/*.iso
+# Simulation binary files and large archives
+simulation/pi-dist/
+simulation/archive/pi-dist/
+*.qcow2
+*.img
+*.iso
+*.bin
+*.dmg
+
+# Archived large files (keep structure but ignore binaries)
+simulation/archive/**/*.qcow2
+simulation/archive/**/*.img
+simulation/archive/**/*.iso
