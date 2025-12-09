@@ -45,6 +45,9 @@ fi
 
 echo "Starting Vehicle Edge Runtime Docker inside $CONTAINER..."
 
+# Connect simulation container to Kit Manager network
+docker network connect vehicle-edge-network "$CONTAINER" 2>/dev/null || print_status INFO "Already connected to Kit Manager network"
+
 # Build runtime image
 print_status INFO "Building runtime image..."
 docker exec "$CONTAINER" bash -c "
@@ -60,14 +63,29 @@ docker exec "$CONTAINER" bash -c "
 
 # Start runtime
 print_status INFO "Starting runtime container..."
+# Expose Kit Manager port from simulation container to host
+docker exec "$CONTAINER" bash -c "
+    docker stop kit-manager 2>/dev/null || true
+    docker rm kit-manager 2>/dev/null || true
+    docker run -d \
+        --name kit-manager \
+        --network bridge \
+        -p 3090:3090 \
+        kit-manager:sim
+" 2>/dev/null || true
+
+# Wait for Kit Manager to restart
+sleep 3
+
 docker exec "$CONTAINER" docker run -d \
     --name "$RUNTIME_CONTAINER" \
     --network bridge \
+    --add-host kit-manager:127.0.0.1 \
     -p 3002:3002 \
     -p 3003:3003 \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /home/pi/vehicle-edge-runtime/workspace/data:/app/data \
-    -e KIT_MANAGER_URL=ws://kit-manager:3090 \
+    -e KIT_MANAGER_URL=ws://localhost:3090 \
     -e PORT=3002 \
     -e LOG_LEVEL=info \
     -e DATA_PATH=/app/data \

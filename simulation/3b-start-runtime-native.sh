@@ -36,7 +36,7 @@ if ! curl -s http://localhost:3090/listAllKits >/dev/null 2>&1; then
 fi
 
 # Connect container to Kit Manager network
-docker network connect vehicle-edge-network "$CONTAINER" 2>/dev/null || true
+docker network connect vehicle-edge-network "$CONTAINER" 2>/dev/null || print_status INFO "Already connected to Kit Manager network"
 
 # Stop existing native processes
 if docker exec "$CONTAINER" bash -c "pgrep -f 'node src/index.js'" >/dev/null 2>&1; then
@@ -57,7 +57,7 @@ docker exec "$CONTAINER" bash -c "
 print_status INFO "Starting native runtime process..."
 docker exec -d "$CONTAINER" bash -c "
     cd /home/pi/vehicle-edge-runtime/workspace
-    export KIT_MANAGER_URL=ws://kit-manager-standalone:3090
+    export KIT_MANAGER_URL=ws://localhost:3090
     export PORT=3002
     export LOG_LEVEL=info
     export DATA_PATH=/home/pi/vehicle-edge-runtime/workspace/data
