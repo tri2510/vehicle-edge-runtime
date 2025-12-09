@@ -68,6 +68,65 @@ if ! docker exec "$CONTAINER" bash -c "command -v node >/dev/null && command -v 
     docker exec "$CONTAINER" npm --version
 fi
 
+# Install Docker inside simulation container using Docker-in-Docker approach
+echo "Installing Docker inside simulation container..."
+if ! docker exec "$CONTAINER" bash -c "command -v docker >/dev/null"; then
+    echo "Docker not found, installing Docker-in-Docker..."
+
+    # Wait for any apt processes to finish
+    docker exec "$CONTAINER" bash -c "
+        while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+            echo 'Waiting for apt lock to be released...'
+            sleep 2
+        done
+    "
+
+    docker exec "$CONTAINER" bash -c "
+        apt-get update
+        apt-get install -y ca-certificates curl gnupg
+
+        # Install Docker using the official convenience script
+        curl -fsSL https://get.docker.com | sh
+
+        # Start Docker daemon manually (no systemd in container)
+        dockerd &
+        sleep 5
+
+        # Add pi user to docker group
+        usermod -aG docker pi
+
+        # Create docker socket directory
+        mkdir -p /var/run
+
+        # Kill existing dockerd processes
+        pkill dockerd || true
+        sleep 2
+    "
+
+    # Verify Docker installation
+    echo "Verifying Docker installation..."
+    if docker exec "$CONTAINER" bash -c "command -v docker >/dev/null"; then
+        echo "Docker version:"
+        docker exec "$CONTAINER" docker --version
+    else
+        echo "WARNING: Docker installation failed, trying alternative approach..."
+        # Install docker.io from Ubuntu repos as fallback
+        docker exec "$CONTAINER" bash -c "
+            apt-get install -y docker.io
+            usermod -aG docker pi
+        "
+        if docker exec "$CONTAINER" bash -c "command -v docker >/dev/null"; then
+            echo "Docker (docker.io) version:"
+            docker exec "$CONTAINER" docker --version
+        else
+            echo "ERROR: Docker installation failed completely"
+        fi
+    fi
+else
+    echo "Docker already installed:"
+    docker exec "$CONTAINER" docker --version
+fi
+
 # Create pi user and home directory if needed
 echo "Setting up pi user environment..."
 docker exec "$CONTAINER" bash -c "

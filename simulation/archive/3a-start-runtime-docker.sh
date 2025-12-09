@@ -29,12 +29,21 @@ if ! docker exec "$CONTAINER" test -f /home/pi/vehicle-edge-runtime/workspace/pa
     exit 1
 fi
 
-# Check if Kit Manager is accessible
-if ! curl -s http://localhost:3090/listAllKits >/dev/null 2>&1; then
-    print_status ERROR "Kit Manager not accessible"
-    echo "Start Kit Manager first with: ./2a-start-kit-manager-internal.sh or ./2b-start-kit-manager-external.sh"
-    exit 1
-fi
+# Start Kit Manager inside simulation container
+echo "Starting Kit Manager inside simulation container..."
+docker exec "$CONTAINER" bash -c "
+    if docker ps --format '{{.Names}}' | grep -q 'kit-manager'; then
+        docker stop kit-manager 2>/dev/null || true
+        docker rm kit-manager 2>/dev/null || true
+    fi
+    docker run -d \
+        --name kit-manager \
+        --network bridge \
+        kit-manager:sim
+"
+
+# Wait for Kit Manager to start
+sleep 5
 
 # Stop existing runtime
 if docker exec "$CONTAINER" bash -c "docker ps --format '{{.Names}}' | grep -q '$RUNTIME_CONTAINER'" 2>/dev/null; then
@@ -77,15 +86,22 @@ docker exec "$CONTAINER" bash -c "
 # Wait for Kit Manager to restart
 sleep 3
 
+# Add kit-manager host entry to runtime container
+docker exec "$CONTAINER" bash -c "
+    docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' kit-manager
+" > /tmp/kit_manager_ip.txt
+
+KIT_MANAGER_IP=$(cat /tmp/kit_manager_ip.txt)
+
 docker exec "$CONTAINER" docker run -d \
     --name "$RUNTIME_CONTAINER" \
     --network bridge \
-    --add-host kit-manager:127.0.0.1 \
+    --add-host kit-manager:"$KIT_MANAGER_IP" \
     -p 3002:3002 \
     -p 3003:3003 \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /home/pi/vehicle-edge-runtime/workspace/data:/app/data \
-    -e KIT_MANAGER_URL=ws://localhost:3090 \
+    -e KIT_MANAGER_URL=ws://kit-manager:3090 \
     -e PORT=3002 \
     -e LOG_LEVEL=info \
     -e DATA_PATH=/app/data \
