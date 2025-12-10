@@ -732,7 +732,7 @@ export class EnhancedApplicationManager {
             HostConfig: {
                 Binds: [
                     `${path.resolve(appDir)}:${workingDir}`,
-                    `${path.join(this.appStorage, 'dependencies', appId)}:/app/dependencies:ro`
+                    `${path.resolve(path.join(this.appStorage, 'dependencies', appId))}:/app/dependencies:ro`
                 ],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
@@ -752,6 +752,151 @@ export class EnhancedApplicationManager {
         this.logger.debug('Python container created', { executionId, containerId: container.id });
 
         return container;
+    }
+
+    async _createNativePythonProcess(options) {
+        const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
+        const { spawn } = await import('child_process');
+
+        // Set up environment variables
+        const processEnv = {
+            ...process.env,
+            PYTHONUNBUFFERED: '1',
+            PYTHONPATH: `${path.join(this.appStorage, 'dependencies', appId)}:${workingDir}`,
+            APP_ID: appId,
+            EXECUTION_ID: executionId,
+            ...env
+        };
+
+        // Create Python process
+        const pythonProcess = spawn('python3', [entryPoint], {
+            cwd: appDir,
+            env: processEnv,
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        // Create mock container object for compatibility
+        const mockContainer = {
+            id: `native-python-${executionId}`,
+            start: async () => {
+                this.logger.info('Starting native Python process', { executionId, pid: pythonProcess.pid });
+
+                // Handle process output
+                pythonProcess.stdout.on('data', (data) => {
+                    const output = data.toString();
+                    this._handleProcessOutput(executionId, 'stdout', output);
+                });
+
+                pythonProcess.stderr.on('data', (data) => {
+                    const output = data.toString();
+                    this._handleProcessOutput(executionId, 'stderr', output);
+                });
+
+                pythonProcess.on('close', (code) => {
+                    this.logger.info('Native Python process exited', { executionId, exitCode: code });
+                    this._handleProcessExit(executionId, code);
+                });
+
+                pythonProcess.on('error', (error) => {
+                    this.logger.error('Native Python process error', { executionId, error: error.message });
+                    this._handleProcessError(executionId, error);
+                });
+
+                return { id: mockContainer.id };
+            },
+            stop: async () => {
+                this.logger.info('Stopping native Python process', { executionId });
+                if (pythonProcess && !pythonProcess.killed) {
+                    pythonProcess.kill('SIGTERM');
+                }
+            },
+            remove: async () => {
+                this.logger.debug('Cleaning up native Python process', { executionId });
+            },
+            attach: async ({ stream, stdout, stderr }) => {
+                if (stream) {
+                    pythonProcess.stdout.on('data', stdout);
+                }
+                if (stderr) {
+                    pythonProcess.stderr.on('data', stderr);
+                }
+            },
+            stats: async () => ({
+                memory_usage: { usage: 0, limit: 512 * 1024 * 1024 },
+                cpu_usage: { usage: 0 }
+            }),
+            wait: async () => {
+                return new Promise((resolve) => {
+                    pythonProcess.on('close', (code) => {
+                        resolve({ StatusCode: code });
+                    });
+                });
+            }
+        };
+
+        // Store the process for later access
+        this.nativeProcesses = this.nativeProcesses || new Map();
+        this.nativeProcesses.set(executionId, pythonProcess);
+
+        this.logger.debug('Native Python process created', { executionId, pid: pythonProcess.pid });
+        return mockContainer;
+    }
+
+    _handleProcessOutput(executionId, stream, data) {
+        // Emit output events for console streaming
+        this.emit('processOutput', {
+            executionId,
+            stream,
+            data: data.trim(),
+            timestamp: new Date().toISOString()
+        });
+
+        // Add to application logs
+        this.db.addLog(executionId, stream === 'stderr' ? 'stderr' : 'stdout', data.trim());
+    }
+
+    _handleProcessExit(executionId, exitCode) {
+        // Update runtime state with exit code
+        const app = this.runningApplications.get(executionId);
+        if (app) {
+            this.db.updateRuntimeState(app.appId, {
+                execution_id: executionId,
+                current_state: 'stopped',
+                exit_code: exitCode
+            });
+        }
+
+        // Clean up native process reference
+        if (this.nativeProcesses && this.nativeProcesses.has(executionId)) {
+            this.nativeProcesses.delete(executionId);
+        }
+
+        // Emit exit event
+        this.emit('processExited', {
+            executionId,
+            exitCode,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    _handleProcessError(executionId, error) {
+        this.logger.error('Native Python process error', { executionId, error: error.message });
+
+        // Update runtime state with error
+        const app = this.runningApplications.get(executionId);
+        if (app) {
+            this.db.updateRuntimeState(app.appId, {
+                execution_id: executionId,
+                current_state: 'error'
+            });
+        }
+
+        // Emit error event
+        this.emit('processError', {
+            executionId,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
     }
 
     async _createBinaryContainer(options) {

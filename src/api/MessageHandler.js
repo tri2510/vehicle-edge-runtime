@@ -1300,7 +1300,7 @@ export class MessageHandler {
                 appId: appId || result.appId,
                 executionId: executionId || result.executionId,
                 status: result.status,
-                exitCode: result.exitCode,
+                exitCode: result.exitCode || 0, // Default to 0 if exitCode is undefined
                 timestamp: new Date().toISOString()
             };
 
