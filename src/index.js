@@ -14,7 +14,7 @@ config();
 // Parse command line arguments
 const args = process.argv.slice(2);
 let PORT = process.env.PORT || 3002;
-let KIT_MANAGER_URL = process.env.KIT_MANAGER_URL || 'ws://localhost:8080';
+let KIT_MANAGER_URL = process.env.KIT_MANAGER_URL || 'ws://localhost:3090';
 let LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 let SKIP_KIT_MANAGER = process.env.SKIP_KIT_MANAGER === 'true';
 let RUNTIME_ID = process.env.RUNTIME_ID || null;

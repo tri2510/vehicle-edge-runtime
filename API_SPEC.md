@@ -4,8 +4,8 @@
 
 The Vehicle Edge Runtime provides a comprehensive WebSocket API for vehicle application management, real-time monitoring, and vehicle signal access. The runtime features SQLite persistence, enhanced application lifecycle management, Python dependency resolution, and bidirectional console streaming.
 
-**Default WebSocket URL:** `ws://localhost:3025/runtime`
-**Health Check URL:** `http://localhost:3026`
+**Default WebSocket URL:** `ws://localhost:3002/runtime`
+**Health Check URL:** `http://localhost:3003`
 
 ---
 
@@ -18,7 +18,7 @@ The Vehicle Edge Runtime uses native WebSocket (ws://) for bidirectional communi
 ```javascript
 import WebSocket from 'ws';
 
-const ws = new WebSocket('ws://localhost:3025/runtime');
+const ws = new WebSocket('ws://localhost:3002/runtime');
 
 ws.on('open', () => {
   console.log('Connected to Vehicle Edge Runtime');
@@ -692,7 +692,7 @@ import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
 class VehicleEdgeRuntimeClient {
-  constructor(url = 'ws://localhost:3025/runtime') {
+  constructor(url = 'ws://localhost:3002/runtime') {
     this.ws = new WebSocket(url);
     this.pendingRequests = new Map();
     this.setupEventHandlers();
@@ -842,7 +842,7 @@ import uuid
 from typing import Dict, Any, Optional
 
 class VehicleEdgeRuntimeClient:
-    def __init__(self, url: str = "ws://localhost:3025/runtime"):
+    def __init__(self, url: str = "ws://localhost:3002/runtime"):
         self.url = url
         self.websocket = None
         self.pending_requests = {}
@@ -1070,7 +1070,7 @@ try {
 ### Health Check
 
 ```bash
-curl http://localhost:3026
+curl http://localhost:3003
 ```
 
 **Response:**
@@ -1099,7 +1099,7 @@ Enable debug mode by setting log level:
 
 ```javascript
 // Connect with debug logging
-const ws = new WebSocket('ws://localhost:3025/runtime?debug=true');
+const ws = new WebSocket('ws://localhost:3002/runtime?debug=true');
 ```
 
 ### Message Tracing
@@ -1128,7 +1128,7 @@ function VehicleRuntimeDashboard() {
   const [runtimeStatus, setRuntimeStatus] = useState({});
 
   useEffect(() => {
-    const websocket = new WebSocket('ws://localhost:3025/runtime');
+    const websocket = new WebSocket('ws://localhost:3002/runtime');
     setWs(websocket);
 
     websocket.onopen = () => {
@@ -1232,7 +1232,7 @@ function VehicleRuntimeDashboard() {
 ```bash
 #!/bin/bash
 # Install an application
-curl -X POST ws://localhost:3025/runtime \
+curl -X POST ws://localhost:3002/runtime \
   -H "Content-Type: application/json" \
   -d '{
     "type": "install_app",
@@ -1246,12 +1246,12 @@ curl -X POST ws://localhost:3025/runtime \
   }'
 
 # List applications
-curl -X POST ws://localhost:3025/runtime \
+curl -X POST ws://localhost:3002/runtime \
   -H "Content-Type: application/json" \
   -d '{"type": "list_apps"}'
 
 # Get health status
-curl http://localhost:3026
+curl http://localhost:3003
 ```
 
 ---
@@ -1286,7 +1286,7 @@ The Vehicle Edge Runtime API follows semantic versioning:
 ### Version Negotiation
 
 ```javascript
-const ws = new WebSocket('ws://localhost:3025/runtime?version=2.0');
+const ws = new WebSocket('ws://localhost:3002/runtime?version=2.0');
 ```
 
 ### Backward Compatibility

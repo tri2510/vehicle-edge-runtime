@@ -1,0 +1,1608 @@
+# Vehicle Edge Runtime API Specification
+
+## Overview
+
+The Vehicle Edge Runtime provides a comprehensive WebSocket-based API for vehicle application lifecycle management, real-time console streaming, vehicle signal access, resource monitoring, and database persistence. This specification documents the complete API based on the actual implementation.
+
+**Connection Details:**
+- **Protocol:** WebSocket (not Socket.IO)
+- **Default Port:** 8080
+- **Message Format:** JSON
+- **Transport:** Native WebSocket with bidirectional communication
+
+---
+
+## Table of Contents
+
+1. [WebSocket Connection](#websocket-connection)
+2. [Application Lifecycle APIs](#application-lifecycle-apis)
+3. [Database Persistence APIs](#database-persistence-apis)
+4. [Console Streaming APIs](#console-streaming-apis)
+5. [Vehicle Signal APIs](#vehicle-signal-apis)
+6. [Resource Monitoring APIs](#resource-monitoring-apis)
+7. [Runtime Management APIs](#runtime-management-apis)
+8. [Message Format](#message-format)
+9. [Error Handling](#error-handling)
+10. [Integration Examples](#integration-examples)
+
+---
+
+## WebSocket Connection
+
+### Connection URL
+```
+ws://localhost:8080
+```
+
+### Connection Header
+```http
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: <client-generated-key>
+Sec-WebSocket-Version: 13
+```
+
+### Connection Response
+Upon successful connection, the server sends:
+
+```json
+{
+  "type": "connection_established",
+  "clientId": "client_123456789",
+  "runtimeId": "runtime_abc123",
+  "timestamp": "2024-12-10T11:39:00.000Z"
+}
+```
+
+---
+
+## Application Lifecycle APIs
+
+### 1. Install Application
+
+Installs an application with dependencies and prepares it for execution.
+
+**Request:**
+```json
+{
+  "type": "install_app",
+  "id": "msg_123",
+  "appData": {
+    "id": "speed_monitor_app",
+    "name": "Speed Monitor",
+    "version": "1.0.0",
+    "description": "Monitors vehicle speed",
+    "type": "python",
+    "code": "print('Hello from speed monitor')",
+    "entry_point": "main.py",
+    "python_deps": ["numpy>=1.21.0", "pandas>=1.3.0"],
+    "vehicle_signals": ["Vehicle.Speed", "Vehicle.Engine.RPM"],
+    "env": {
+      "LOG_LEVEL": "info"
+    },
+    "config": {
+      "threshold": 100
+    }
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_installed",
+  "id": "msg_123",
+  "appId": "speed_monitor_app",
+  "name": "Speed Monitor",
+  "appType": "python",
+  "status": "installed",
+  "appDir": "/data/applications/python/speed_monitor_app",
+  "timestamp": "2024-12-10T11:39:01.000Z"
+}
+```
+
+### 2. Run Python Application
+
+Executes a Python application in a containerized environment.
+
+**Request:**
+```json
+{
+  "type": "run_python_app",
+  "id": "msg_124",
+  "appId": "speed_monitor_app",
+  "vehicleId": "vehicle_001",
+  "env": {
+    "VEHICLE_ID": "vehicle_001",
+    "DEBUG": "true"
+  },
+  "workingDir": "/app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "python_app_started",
+  "id": "msg_124",
+  "executionId": "exec_abc123def456",
+  "appId": "speed_monitor_app",
+  "status": "started",
+  "timestamp": "2024-12-10T11:39:02.000Z"
+}
+```
+
+### 3. Run Binary Application
+
+Executes a binary application in a containerized environment.
+
+**Request:**
+```json
+{
+  "type": "run_binary_app",
+  "id": "msg_125",
+  "appId": "sensor_processor",
+  "binaryPath": "/app/bin/sensor_processor",
+  "args": ["--input", "/data/sensors", "--output", "/data/output"],
+  "env": {
+    "SENSOR_TYPE": "lidar"
+  },
+  "workingDir": "/app",
+  "vehicleId": "vehicle_001"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "binary_app_started",
+  "id": "msg_125",
+  "executionId": "exec_def456ghi789",
+  "appId": "sensor_processor",
+  "status": "started",
+  "timestamp": "2024-12-10T11:39:03.000Z"
+}
+```
+
+### 4. Pause Application
+
+Temporarily suspends application execution.
+
+**Request:**
+```json
+{
+  "type": "pause_app",
+  "id": "msg_126",
+  "appId": "speed_monitor_app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_paused",
+  "id": "msg_126",
+  "appId": "speed_monitor_app",
+  "status": "paused",
+  "timestamp": "2024-12-10T11:39:04.000Z"
+}
+```
+
+### 5. Resume Application
+
+Resumes a paused application.
+
+**Request:**
+```json
+{
+  "type": "resume_app",
+  "id": "msg_127",
+  "appId": "speed_monitor_app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_resumed",
+  "id": "msg_127",
+  "appId": "speed_monitor_app",
+  "status": "running",
+  "timestamp": "2024-12-10T11:39:05.000Z"
+}
+```
+
+### 6. Stop Application
+
+Stops application execution and cleans up resources.
+
+**Request:**
+```json
+{
+  "type": "stop_app",
+  "id": "msg_128",
+  "appId": "speed_monitor_app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_stopped",
+  "id": "msg_128",
+  "appId": "speed_monitor_app",
+  "status": "stopped",
+  "exitCode": 0,
+  "timestamp": "2024-12-10T11:39:06.000Z"
+}
+```
+
+### 7. Uninstall Application
+
+Removes an application and all its data.
+
+**Request:**
+```json
+{
+  "type": "uninstall_app",
+  "id": "msg_129",
+  "appId": "speed_monitor_app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_uninstalled",
+  "id": "msg_129",
+  "appId": "speed_monitor_app",
+  "status": "uninstalled",
+  "timestamp": "2024-12-10T11:39:07.000Z"
+}
+```
+
+### 8. Get Application Status
+
+Retrieves current status and runtime information.
+
+**Request:**
+```json
+{
+  "type": "get_app_status",
+  "id": "msg_130",
+  "appId": "speed_monitor_app"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_status",
+  "id": "msg_130",
+  "status": {
+    "appId": "speed_monitor_app",
+    "name": "Speed Monitor",
+    "type": "python",
+    "status": "running",
+    "created_at": "2024-12-10T11:35:00.000Z",
+    "updated_at": "2024-12-10T11:39:02.000Z",
+    "last_start": "2024-12-10T11:39:02.000Z",
+    "total_runtime": 1800000,
+    "uptime": 240000,
+    "execution_id": "exec_abc123def456",
+    "container_id": "container_789xyz",
+    "current_state": "running",
+    "resources": {
+      "cpu_percent": 15.5,
+      "memory_usage": 134217728,
+      "network_io": 1024000
+    }
+  },
+  "timestamp": "2024-12-10T11:39:08.000Z"
+}
+```
+
+---
+
+## Database Persistence APIs
+
+### 1. List Applications
+
+Retrieves a list of applications with optional filtering.
+
+**Request:**
+```json
+{
+  "type": "list_apps",
+  "id": "msg_131",
+  "filters": {
+    "status": "running",
+    "type": "python",
+    "limit": 50
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "type": "apps_list",
+  "id": "msg_131",
+  "apps": [
+    {
+      "id": "speed_monitor_app",
+      "name": "Speed Monitor",
+      "type": "python",
+      "status": "running",
+      "version": "1.0.0",
+      "created_at": "2024-12-10T11:35:00.000Z",
+      "updated_at": "2024-12-10T11:39:02.000Z",
+      "runtime_state": "running",
+      "execution_id": "exec_abc123def456",
+      "container_id": "container_789xyz",
+      "uptime": 240000,
+      "python_deps": ["numpy>=1.21.0", "pandas>=1.3.0"],
+      "vehicle_signals": ["Vehicle.Speed", "Vehicle.Engine.RPM"]
+    }
+  ],
+  "count": 1,
+  "filters": {
+    "status": "running",
+    "type": "python",
+    "limit": 50
+  },
+  "timestamp": "2024-12-10T11:39:09.000Z"
+}
+```
+
+### 2. Get Application Logs
+
+Retrieves application logs with filtering options.
+
+**Request:**
+```json
+{
+  "type": "get_app_logs",
+  "id": "msg_132",
+  "appId": "speed_monitor_app",
+  "options": {
+    "stream": "stdout",
+    "level": "info",
+    "limit": 100,
+    "start_time": "2024-12-10T11:30:00.000Z",
+    "end_time": "2024-12-10T11:40:00.000Z"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "type": "app_logs",
+  "id": "msg_132",
+  "appId": "speed_monitor_app",
+  "logs": [
+    {
+      "id": 1,
+      "app_id": "speed_monitor_app",
+      "execution_id": "exec_abc123def456",
+      "timestamp": "2024-12-10T11:39:02.000Z",
+      "stream": "status",
+      "content": "Application started",
+      "level": "info"
+    },
+    {
+      "id": 2,
+      "app_id": "speed_monitor_app",
+      "execution_id": "exec_abc123def456",
+      "timestamp": "2024-12-10T11:39:03.000Z",
+      "stream": "stdout",
+      "content": "Initializing speed monitor...",
+      "level": "info"
+    }
+  ],
+  "options": {
+    "stream": "stdout",
+    "level": "info",
+    "limit": 100
+  },
+  "timestamp": "2024-12-10T11:39:10.000Z"
+}
+```
+
+---
+
+## Console Streaming APIs
+
+### 1. Subscribe to Console Output
+
+Subscribe to real-time console output from a running application.
+
+**Request:**
+```json
+{
+  "type": "console_subscribe",
+  "id": "msg_133",
+  "executionId": "exec_abc123def456"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "console_subscribed",
+  "id": "msg_133",
+  "clientId": "client_123456789",
+  "executionId": "exec_abc123def456",
+  "timestamp": "2024-12-10T11:39:11.000Z"
+}
+```
+
+**Streaming Messages (ongoing):**
+```json
+{
+  "type": "console_output",
+  "executionId": "exec_abc123def456",
+  "stream": "stdout",
+  "output": "Current speed: 85.5 km/h",
+  "timestamp": "2024-12-10T11:39:12.000Z"
+}
+```
+
+### 2. Unsubscribe from Console Output
+
+Unsubscribe from console output for an application.
+
+**Request:**
+```json
+{
+  "type": "console_unsubscribe",
+  "id": "msg_134",
+  "executionId": "exec_abc123def456"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "console_unsubscribed",
+  "id": "msg_134",
+  "clientId": "client_123456789",
+  "executionId": "exec_abc123def456",
+  "timestamp": "2024-12-10T11:39:13.000Z"
+}
+```
+
+### 3. Send Stdin Input
+
+Send input to the application's standard input.
+
+**Request:**
+```json
+{
+  "type": "stdin_input",
+  "id": "msg_135",
+  "executionId": "exec_abc123def456",
+  "input": "pause\n"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "stdin_response",
+  "id": "msg_135",
+  "success": true,
+  "timestamp": "2024-12-10T11:39:14.000Z"
+}
+```
+
+---
+
+## Vehicle Signal APIs
+
+### 1. Subscribe to Vehicle Signals
+
+Subscribe to real-time vehicle signal updates.
+
+**Request:**
+```json
+{
+  "type": "subscribe_apis",
+  "id": "msg_136",
+  "apis": [
+    "Vehicle.Speed",
+    "Vehicle.Engine.RPM",
+    "Vehicle.Steering.Angle"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "type": "apis_subscribed",
+  "id": "msg_136",
+  "subscriptionId": "sub_1640123456_abc123",
+  "apis": [
+    "Vehicle.Speed",
+    "Vehicle.Engine.RPM",
+    "Vehicle.Steering.Angle"
+  ],
+  "kit_id": "runtime_abc123",
+  "timestamp": "2024-12-10T11:39:15.000Z"
+}
+```
+
+**Signal Updates (streaming):**
+```json
+{
+  "type": "signal_update",
+  "subscriptionId": "sub_1640123456_abc123",
+  "signals": {
+    "Vehicle.Speed": {
+      "value": 85.5,
+      "timestamp": "2024-12-10T11:39:16.000Z"
+    },
+    "Vehicle.Engine.RPM": {
+      "value": 2500,
+      "timestamp": "2024-12-10T11:39:16.000Z"
+    }
+  }
+}
+```
+
+### 2. Get Signal Values
+
+Retrieve current values for specified signals.
+
+**Request:**
+```json
+{
+  "type": "get_signals_value",
+  "id": "msg_137",
+  "apis": [
+    "Vehicle.Speed",
+    "Vehicle.Engine.RPM"
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "type": "signals_value_response",
+  "id": "msg_137",
+  "result": {
+    "Vehicle.Speed": {
+      "value": 85.5,
+      "timestamp": "2024-12-10T11:39:17.000Z"
+    },
+    "Vehicle.Engine.RPM": {
+      "value": 2500,
+      "timestamp": "2024-12-10T11:39:17.000Z"
+    }
+  },
+  "kit_id": "runtime_abc123",
+  "timestamp": "2024-12-10T11:39:17.000Z"
+}
+```
+
+### 3. Set Signal Values
+
+Set values for writable vehicle signals.
+
+**Request:**
+```json
+{
+  "type": "write_signals_value",
+  "id": "msg_138",
+  "data": {
+    "Vehicle.Body.Lights.IsLowBeamOn": true,
+    "Vehicle.Body.Lights.IsHighBeamOn": false
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "type": "signals_written",
+  "id": "msg_138",
+  "response": {
+    "status": "success",
+    "updated_signals": 2,
+    "timestamp": "2024-12-10T11:39:18.000Z"
+  },
+  "kit_id": "runtime_abc123",
+  "timestamp": "2024-12-10T11:39:18.000Z"
+}
+```
+
+### 4. Generate Vehicle Model
+
+Generate or update VSS (Vehicle Signal Specification) model.
+
+**Request:**
+```json
+{
+  "type": "generate_vehicle_model",
+  "id": "msg_139",
+  "data": "{\"Vehicle\":{\"Speed\":{\"datatype\":\"float\",\"type\":\"sensor\",\"unit\":\"km/h\"}}}"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "vehicle_model_generated",
+  "id": "msg_139",
+  "success": true,
+  "vssPath": "/data/configs/vss.json",
+  "timestamp": "2024-12-10T11:39:19.000Z"
+}
+```
+
+### 5. List Mock Signals
+
+List all available mock signals with current values.
+
+**Request:**
+```json
+{
+  "type": "list_mock_signal",
+  "id": "msg_140"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "mock_signal_list",
+  "id": "msg_140",
+  "data": [
+    {
+      "path": "Vehicle.Speed",
+      "name": "Vehicle.Speed",
+      "datatype": "float",
+      "type": "sensor",
+      "unit": "km/h",
+      "description": "Vehicle speed",
+      "min": 0,
+      "max": 300,
+      "value": 85.5
+    },
+    {
+      "path": "Vehicle.Engine.RPM",
+      "name": "Vehicle.Engine.RPM",
+      "datatype": "uint16",
+      "type": "sensor",
+      "unit": "rpm",
+      "description": "Engine revolutions per minute",
+      "min": 0,
+      "max": 8000,
+      "value": 2500
+    }
+  ],
+  "timestamp": "2024-12-10T11:39:20.000Z"
+}
+```
+
+---
+
+## Resource Monitoring APIs
+
+### 1. Get Resource Metrics
+
+Retrieve resource usage metrics for applications.
+
+**Request:**
+```json
+{
+  "type": "get_resource_metrics",
+  "id": "msg_141",
+  "appId": "speed_monitor_app",
+  "options": {
+    "limit": 100,
+    "startTime": "2024-12-10T11:30:00.000Z"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "type": "resource_metrics",
+  "id": "msg_141",
+  "appId": "speed_monitor_app",
+  "metrics": [
+    {
+      "appId": "speed_monitor_app",
+      "containerId": "container_789xyz",
+      "timestamp": "2024-12-10T11:39:15.000Z",
+      "resources": {
+        "cpu_percent": 15.5,
+        "memory_rss": 134217728,
+        "memory_limit": 536870912,
+        "memory_percent": 25.0,
+        "network_bytes_in": 1024000,
+        "network_bytes_out": 512000,
+        "block_read": 4096,
+        "block_write": 8192,
+        "pids": 1,
+        "uptime_seconds": 240,
+        "status": "running",
+        "disk_usage": 52428800
+      }
+    }
+  ],
+  "timestamp": "2024-12-10T11:39:21.000Z"
+}
+```
+
+### 2. Get Resource Alerts
+
+Retrieve resource usage alerts and threshold breaches.
+
+**Request:**
+```json
+{
+  "type": "get_resource_alerts",
+  "id": "msg_142",
+  "appId": "speed_monitor_app",
+  "severity": "warning"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "resource_alerts",
+  "id": "msg_142",
+  "alerts": [
+    {
+      "appId": "speed_monitor_app",
+      "timestamp": "2024-12-10T11:39:10.000Z",
+      "breaches": [
+        {
+          "type": "memory",
+          "value": 85.0,
+          "threshold": 80.0,
+          "severity": "warning"
+        }
+      ],
+      "metrics": {
+        "memory_percent": 85.0,
+        "cpu_percent": 15.5
+      }
+    }
+  ],
+  "timestamp": "2024-12-10T11:39:22.000Z"
+}
+```
+
+---
+
+## Runtime Management APIs
+
+### 1. Get Runtime Info
+
+Retrieve comprehensive runtime status and information.
+
+**Request:**
+```json
+{
+  "type": "get_runtime_info",
+  "id": "msg_143"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "get-runtime-info-response",
+  "id": "msg_143",
+  "kit_id": "runtime_abc123",
+  "data": {
+    "lsOfRunner": [
+      {
+        "appName": "speed_monitor_app",
+        "request_from": "frontend",
+        "from": 1702214400000
+      }
+    ],
+    "lsOfApiSubscriber": {
+      "client_123456789": {
+        "apis": ["Vehicle.Speed", "Vehicle.Engine.RPM"],
+        "from": 1702214400000
+      }
+    }
+  },
+  "timestamp": "2024-12-10T11:39:23.000Z"
+}
+```
+
+### 2. Get VSS Configuration
+
+Retrieve Vehicle Signal Specification configuration.
+
+**Request:**
+```json
+{
+  "type": "get_vss_config",
+  "id": "msg_144"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "get_vss_config-response",
+  "id": "msg_144",
+  "vss_config": {
+    "central_vss_url": "localhost:55555",
+    "local_cache": "/data/configs/vss.json",
+    "refresh_interval": 3600,
+    "fallback_config": "/data/configs/vss_backup.json"
+  },
+  "last_updated": "2024-12-10T11:35:00.000Z",
+  "signal_count": 15,
+  "timestamp": "2024-12-10T11:39:24.000Z"
+}
+```
+
+### 3. Check Signal Conflicts
+
+Check for potential signal conflicts before deployment.
+
+**Request:**
+```json
+{
+  "type": "check_signal_conflicts",
+  "id": "msg_145",
+  "app_id": "new_speed_app",
+  "signals": [
+    {
+      "signal": "Vehicle.Speed",
+      "access": "read"
+    },
+    {
+      "signal": "Vehicle.Body.Lights.IsLowBeamOn",
+      "access": "write"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "type": "check_signal_conflicts-response",
+  "id": "msg_145",
+  "deployment_precheck": {
+    "app_id": "new_speed_app",
+    "signals_required": [
+      {
+        "signal": "Vehicle.Speed",
+        "access": "read",
+        "conflict": false
+      },
+      {
+        "signal": "Vehicle.Body.Lights.IsLowBeamOn",
+        "access": "write",
+        "conflict": false
+      }
+    ],
+    "deployment_approved": true,
+    "conflicts_found": 0,
+    "recommended_actions": []
+  },
+  "timestamp": "2024-12-10T11:39:25.000Z"
+}
+```
+
+### 4. Deploy Request
+
+Deploy and execute an application with optional code conversion.
+
+**Request:**
+```json
+{
+  "type": "deploy_request",
+  "id": "msg_146",
+  "code": "print('Deployed app running!')\nprint('Monitoring vehicle speed...')",
+  "prototype": {
+    "id": "quick_deploy_app",
+    "name": "Quick Deploy App",
+    "language": "python"
+  },
+  "username": "developer_user",
+  "disable_code_convert": false,
+  "vehicleId": "vehicle_001"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "deploy_request-response",
+  "id": "msg_146",
+  "cmd": "deploy_request",
+  "executionId": "exec_xyz789uvw012",
+  "appId": "quick_deploy_app",
+  "status": "started",
+  "result": "Application deployed and started successfully",
+  "isDone": true,
+  "code": 0,
+  "kit_id": "runtime_abc123",
+  "timestamp": "2024-12-10T11:39:26.000Z"
+}
+```
+
+### 5. Ping
+
+Keep-alive and health check message.
+
+**Request:**
+```json
+{
+  "type": "ping",
+  "id": "msg_147"
+}
+```
+
+**Response:**
+```json
+{
+  "type": "pong",
+  "id": "msg_147",
+  "timestamp": "2024-12-10T11:39:27.000Z"
+}
+```
+
+---
+
+## Message Format
+
+### Standard Message Structure
+
+All WebSocket messages follow this structure:
+
+```json
+{
+  "type": "message_type",
+  "id": "unique_message_id",
+  "timestamp": "2024-12-10T11:39:00.000Z",
+  // Message-specific fields
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Message type identifier |
+| `id` | string | Yes | Unique message identifier for request/response correlation |
+| `timestamp` | string | Yes | ISO 8601 formatted timestamp |
+
+### Message ID Passthrough
+
+The runtime preserves the message ID from request to response for correlation:
+
+1. Client sends message with `id: "msg_123"`
+2. Runtime processes the message
+3. Runtime sends response with the same `id: "msg_123"`
+
+---
+
+## Error Handling
+
+### Standard Error Response
+
+All errors follow this format:
+
+```json
+{
+  "type": "error",
+  "id": "original_message_id",
+  "error": "Human-readable error description",
+  "code": "ERROR_CODE",
+  "timestamp": "2024-12-10T11:39:00.000Z",
+  "details": {
+    "field": "additional_error_context"
+  }
+}
+```
+
+### Common Error Codes
+
+| Error Code | Description | Example Scenarios |
+|------------|-------------|-------------------|
+| `INVALID_MESSAGE_TYPE` | Unknown message type | Sending unsupported message type |
+| `MISSING_REQUIRED_FIELD` | Required field missing | Missing `appId` in app management requests |
+| `APP_NOT_FOUND` | Application doesn't exist | Requesting status for non-existent app |
+| `APP_NOT_RUNNING` | App not in running state | Trying to pause an app that's stopped |
+| `CONTAINER_ERROR` | Docker container operation failed | Container creation or execution failure |
+| `DEPENDENCY_ERROR` | Python dependency installation failed | Invalid or unavailable Python package |
+| `SIGNAL_NOT_FOUND` | Vehicle signal doesn't exist | Requesting non-existent VSS signal |
+| `PERMISSION_DENIED` | Insufficient permissions | Trying to write to read-only signal |
+| `RESOURCE_LIMIT_EXCEEDED` | Resource limits exceeded | CPU or memory thresholds breached |
+| `DATABASE_ERROR` | Database operation failed | SQLite query or connection error |
+| `KUKSA_CONNECTION_ERROR` | Kuksa databroker unreachable | Vehicle signal service unavailable |
+
+### Error Handling Best Practices
+
+1. **Always check the `type` field** - If it's "error", handle accordingly
+2. **Log the full error response** for debugging
+3. **Implement retry logic** for transient errors (connection issues)
+4. **Validate requests** before sending to prevent errors
+5. **Monitor error patterns** for proactive issue detection
+
+---
+
+## Integration Examples
+
+### JavaScript Client (Native WebSocket)
+
+```javascript
+class VehicleEdgeRuntimeClient {
+  constructor(url = 'ws://localhost:8080') {
+    this.url = url;
+    this.ws = null;
+    this.messageId = 0;
+    this.pendingRequests = new Map();
+    this.subscriptions = new Map();
+  }
+
+  connect() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.url);
+
+      this.ws.onopen = () => {
+        console.log('Connected to Vehicle Edge Runtime');
+        resolve();
+      };
+
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        reject(error);
+      };
+
+      this.ws.onclose = () => {
+        console.log('Disconnected from Vehicle Edge Runtime');
+      };
+
+      this.ws.onmessage = (event) => {
+        this.handleMessage(JSON.parse(event.data));
+      };
+    });
+  }
+
+  handleMessage(message) {
+    if (message.id && this.pendingRequests.has(message.id)) {
+      const { resolve, reject } = this.pendingRequests.get(message.id);
+      this.pendingRequests.delete(message.id);
+
+      if (message.type === 'error') {
+        reject(new Error(message.error));
+      } else {
+        resolve(message);
+      }
+    }
+
+    // Handle streaming messages
+    if (message.type === 'console_output') {
+      this.handleConsoleOutput(message);
+    } else if (message.type === 'signal_update') {
+      this.handleSignalUpdate(message);
+    }
+  }
+
+  sendRequest(type, data = {}) {
+    const id = `msg_${++this.messageId}`;
+    const message = { type, id, ...data };
+
+    return new Promise((resolve, reject) => {
+      this.pendingRequests.set(id, { resolve, reject });
+      this.ws.send(JSON.stringify(message));
+    });
+  }
+
+  async installApp(appData) {
+    return await this.sendRequest('install_app', { appData });
+  }
+
+  async runPythonApp(appId, options = {}) {
+    return await this.sendRequest('run_python_app', { appId, ...options });
+  }
+
+  async pauseApp(appId) {
+    return await this.sendRequest('pause_app', { appId });
+  }
+
+  async resumeApp(appId) {
+    return await this.sendRequest('resume_app', { appId });
+  }
+
+  async stopApp(appId) {
+    return await this.sendRequest('stop_app', { appId });
+  }
+
+  async getAppLogs(appId, options = {}) {
+    return await this.sendRequest('get_app_logs', { appId, options });
+  }
+
+  async subscribeToConsole(executionId) {
+    return await this.sendRequest('console_subscribe', { executionId });
+  }
+
+  async subscribeToSignals(signals) {
+    return await this.sendRequest('subscribe_apis', { apis: signals });
+  }
+
+  async getSignalValues(signals) {
+    return await this.sendRequest('get_signals_value', { apis: signals });
+  }
+
+  async setSignalValues(signalUpdates) {
+    return await this.sendRequest('write_signals_value', { data: signalUpdates });
+  }
+
+  handleConsoleOutput(message) {
+    console.log(`[${message.executionId}] ${message.stream}: ${message.output}`);
+  }
+
+  handleSignalUpdate(message) {
+    console.log('Signal updates:', message.signals);
+  }
+
+  async ping() {
+    return await this.sendRequest('ping');
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+// Usage Example
+async function main() {
+  const client = new VehicleEdgeRuntimeClient();
+
+  try {
+    await client.connect();
+
+    // Install and run an application
+    const appData = {
+      id: 'speed_monitor',
+      name: 'Speed Monitor',
+      type: 'python',
+      code: `
+import time
+while True:
+    print(f"Current speed: {50 + (time.time() % 50)} km/h")
+    time.sleep(1)
+      `,
+      entry_point: 'main.py'
+    };
+
+    await client.installApp(appData);
+    const startResult = await client.runPythonApp('speed_monitor');
+
+    // Subscribe to console output
+    await client.subscribeToConsole(startResult.executionId);
+
+    // Subscribe to vehicle signals
+    await client.subscribeToSignals(['Vehicle.Speed']);
+
+    // Keep running
+    setTimeout(async () => {
+      await client.stopApp('speed_monitor');
+      client.disconnect();
+    }, 30000);
+
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+main();
+```
+
+### Python Client
+
+```python
+import asyncio
+import websockets
+import json
+import uuid
+from typing import Dict, Any, Optional
+
+class VehicleEdgeRuntimeClient:
+    def __init__(self, url: str = "ws://localhost:8080"):
+        self.url = url
+        self.websocket = None
+        self.message_id = 0
+        self.pending_requests = {}
+        self.subscriptions = {}
+
+    async def connect(self):
+        """Connect to the Vehicle Edge Runtime"""
+        try:
+            self.websocket = await websockets.connect(self.url)
+            print("Connected to Vehicle Edge Runtime")
+
+            # Start message handler
+            asyncio.create_task(self._message_handler())
+
+        except Exception as e:
+            print(f"Connection failed: {e}")
+            raise
+
+    async def _message_handler(self):
+        """Handle incoming WebSocket messages"""
+        try:
+            async for message in self.websocket:
+                data = json.loads(message)
+                await self._handle_message(data)
+        except websockets.exceptions.ConnectionClosed:
+            print("Connection closed")
+
+    async def _handle_message(self, message: Dict[str, Any]):
+        """Process incoming messages"""
+        msg_id = message.get('id')
+
+        if msg_id and msg_id in self.pending_requests:
+            future = self.pending_requests.pop(msg_id)
+            future.set_result(message)
+
+        # Handle streaming messages
+        if message.get('type') == 'console_output':
+            await self._handle_console_output(message)
+        elif message.get('type') == 'signal_update':
+            await self._handle_signal_update(message)
+
+    async def send_request(self, message_type: str, **kwargs) -> Dict[str, Any]:
+        """Send a request and wait for response"""
+        if not self.websocket:
+            raise ConnectionError("Not connected to runtime")
+
+        msg_id = f"msg_{self.message_id}"
+        self.message_id += 1
+
+        message = {
+            "type": message_type,
+            "id": msg_id,
+            **kwargs
+        }
+
+        # Create future for response
+        future = asyncio.Future()
+        self.pending_requests[msg_id] = future
+
+        # Send message
+        await self.websocket.send(json.dumps(message))
+
+        # Wait for response
+        response = await future
+
+        if response.get('type') == 'error':
+            raise Exception(response.get('error'))
+
+        return response
+
+    async def install_app(self, app_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Install an application"""
+        return await self.send_request('install_app', appData=app_data)
+
+    async def run_python_app(self, app_id: str, **options) -> Dict[str, Any]:
+        """Run a Python application"""
+        return await self.send_request('run_python_app', appId=app_id, **options)
+
+    async def pause_app(self, app_id: str) -> Dict[str, Any]:
+        """Pause an application"""
+        return await self.send_request('pause_app', appId=app_id)
+
+    async def resume_app(self, app_id: str) -> Dict[str, Any]:
+        """Resume an application"""
+        return await self.send_request('resume_app', appId=app_id)
+
+    async def stop_app(self, app_id: str) -> Dict[str, Any]:
+        """Stop an application"""
+        return await self.send_request('stop_app', appId=app_id)
+
+    async def get_app_logs(self, app_id: str, **options) -> Dict[str, Any]:
+        """Get application logs"""
+        return await self.send_request('get_app_logs', appId=app_id, options=options)
+
+    async def subscribe_to_console(self, execution_id: str) -> Dict[str, Any]:
+        """Subscribe to console output"""
+        return await self.send_request('console_subscribe', executionId=execution_id)
+
+    async def subscribe_to_signals(self, signals: list) -> Dict[str, Any]:
+        """Subscribe to vehicle signals"""
+        return await self.send_request('subscribe_apis', apis=signals)
+
+    async def get_signal_values(self, signals: list) -> Dict[str, Any]:
+        """Get current signal values"""
+        return await self.send_request('get_signals_value', apis=signals)
+
+    async def set_signal_values(self, signal_updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Set signal values"""
+        return await self.send_request('write_signals_value', data=signal_updates)
+
+    async def _handle_console_output(self, message: Dict[str, Any]):
+        """Handle console output messages"""
+        execution_id = message.get('executionId')
+        stream = message.get('stream')
+        output = message.get('output')
+        print(f"[{execution_id}] {stream}: {output}")
+
+    async def _handle_signal_update(self, message: Dict[str, Any]):
+        """Handle signal update messages"""
+        signals = message.get('signals', {})
+        print(f"Signal updates: {json.dumps(signals, indent=2)}")
+
+    async def ping(self) -> Dict[str, Any]:
+        """Send ping message"""
+        return await self.send_request('ping')
+
+    async def close(self):
+        """Close the connection"""
+        if self.websocket:
+            await self.websocket.close()
+
+# Usage Example
+async def main():
+    client = VehicleEdgeRuntimeClient()
+
+    try:
+        await client.connect()
+
+        # Install and run a simple app
+        app_data = {
+            "id": "python_test_app",
+            "name": "Python Test App",
+            "type": "python",
+            "code": """
+import time
+for i in range(10):
+    print(f"Count: {i}")
+    time.sleep(1)
+            """,
+            "entry_point": "main.py"
+        }
+
+        await client.install_app(app_data)
+        start_result = await client.run_python_app("python_test_app")
+
+        # Subscribe to console
+        await client.subscribe_to_console(start_result['executionId'])
+
+        # Subscribe to vehicle signals
+        await client.subscribe_to_signals(['Vehicle.Speed'])
+
+        # Wait for app to complete
+        await asyncio.sleep(12)
+
+        # Get logs
+        logs = await client.get_app_logs("python_test_app")
+        print(f"Retrieved {len(logs['logs'])} log entries")
+
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await client.close()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### curl Examples
+
+#### Install Application
+```bash
+curl -X POST ws://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "install_app",
+    "id": "install_001",
+    "appData": {
+      "id": "curl_app",
+      "name": "CURL Test App",
+      "type": "python",
+      "code": "print(\"Hello from CURL app\")",
+      "entry_point": "main.py"
+    }
+  }'
+```
+
+#### Run Application
+```bash
+curl -X POST ws://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "run_python_app",
+    "id": "run_001",
+    "appId": "curl_app"
+  }'
+```
+
+#### Get Application Status
+```bash
+curl -X POST ws://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "get_app_status",
+    "id": "status_001",
+    "appId": "curl_app"
+  }'
+```
+
+#### Subscribe to Vehicle Signals
+```bash
+curl -X POST ws://localhost:8080 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "subscribe_apis",
+    "id": "sub_001",
+    "apis": ["Vehicle.Speed", "Vehicle.Engine.RPM"]
+  }'
+```
+
+---
+
+## Advanced Features
+
+### Bidirectional Streaming
+
+The runtime supports real-time bidirectional streaming:
+
+1. **Console Streaming:** Subscribe to live stdout/stderr from running applications
+2. **Signal Streaming:** Receive real-time vehicle signal updates
+3. **Resource Streaming:** Monitor resource usage in real-time
+4. **Stdin Input:** Send input to running applications
+
+### Message ID Correlation
+
+All requests are correlated with responses using message IDs:
+- Generate unique message IDs for each request
+- The runtime preserves the ID in the response
+- Use this for async request handling and timeout management
+
+### Connection Management
+
+- **Auto-reconnection:** Implement client-side reconnection logic
+- **Heartbeat:** Use ping/pong messages for connection health
+- **Graceful shutdown:** Send cleanup messages before disconnecting
+
+### Error Recovery
+
+- **Retry Logic:** Implement exponential backoff for transient errors
+- **State Validation:** Check application status before operations
+- **Resource Cleanup:** Clean up resources on connection loss
+
+---
+
+## Performance Considerations
+
+### Message Throughput
+
+- **Max Message Size:** 100MB per message
+- **Throughput:** ~1000 messages/second
+- **Latency:** <50ms for local connections
+
+### Resource Limits
+
+- **Max Concurrent Apps:** 100 applications
+- **Max Console Subscribers:** 50 per application
+- **Max Signal Subscriptions:** 1000 per client
+- **Database Connections:** Single SQLite connection with connection pooling
+
+### Memory Management
+
+- **Console Buffer:** 1MB per application (circular buffer)
+- **Resource History:** 1000 data points per application
+- **Signal Cache:** In-memory cache with TTL
+
+---
+
+## Security Considerations
+
+### Current Security Model
+
+- **No Authentication:** Currently open access (development mode)
+- **No Authorization:** All operations permitted to all clients
+- **Network Security:** Runs on localhost by default
+
+### Recommended Security Enhancements
+
+1. **Authentication:** Implement JWT or API key authentication
+2. **Authorization:** Role-based access control for operations
+3. **Input Validation:** Strict validation of all message fields
+4. **Rate Limiting:** Implement message rate limiting per client
+5. **Network Security:** TLS encryption for production deployments
+
+---
+
+## Monitoring and Debugging
+
+### Logging
+
+The runtime provides structured logging at multiple levels:
+- **debug:** Detailed debugging information
+- **info:** General operational information
+- **warn:** Warning conditions
+- **error:** Error conditions
+
+### Metrics
+
+Monitor these key metrics:
+- **Active Applications:** Number of running applications
+- **Resource Usage:** CPU, memory, network per application
+- **Message Rates:** WebSocket message throughput
+- **Error Rates:** Operation failure rates
+- **Connection Counts:** Active WebSocket connections
+
+### Health Checks
+
+Use the `ping` message for health checks:
+```json
+{
+  "type": "ping",
+  "id": "health_check_001"
+}
+```
+
+Expected response:
+```json
+{
+  "type": "pong",
+  "id": "health_check_001",
+  "timestamp": "2024-12-10T11:39:00.000Z"
+}
+```
+
+---
+
+## API Versioning
+
+### Current Version: 1.0.0
+
+This API specification represents version 1.0.0 of the Vehicle Edge Runtime API.
+
+### Versioning Strategy
+
+- **Major Version:** Breaking changes to message structure
+- **Minor Version:** New message types or fields
+- **Patch Version:** Bug fixes and documentation updates
+
+### Backward Compatibility
+
+The runtime maintains backward compatibility for:
+- **Message Format:** Older message formats remain supported
+- **Field Values:** Enum values maintain compatibility
+- **Response Structure:** Core response fields remain stable
+
+---
+
+## Conclusion
+
+This comprehensive API specification provides complete access to the Vehicle Edge Runtime's capabilities for:
+
+- **Application Lifecycle Management:** Install, run, pause, resume, stop, uninstall applications
+- **Real-time Communication:** Bidirectional WebSocket communication with streaming support
+- **Vehicle Signal Access:** Subscribe to and control vehicle signals via VSS
+- **Resource Monitoring:** Monitor application resource usage and performance
+- **Database Persistence:** Persistent storage for applications, logs, and runtime state
+- **Console Streaming:** Real-time access to application stdout/stderr
+- **Error Handling:** Comprehensive error reporting and recovery
+
+The API is designed for scalability, reliability, and ease of integration with various client platforms and programming languages.
+
+---
+
+*Generated from Vehicle Edge Runtime source code analysis*
+*Source files: src/api/MessageHandler.js, src/apps/EnhancedApplicationManager.js, src/database/DatabaseManager.js, src/console/EnhancedConsoleManager.js, src/monitoring/ResourceMonitor.js, src/vehicle/KuksaManager.js*
