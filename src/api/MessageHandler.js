@@ -1294,6 +1294,12 @@ export class MessageHandler {
                 throw new Error('Either appId or executionId is required');
             }
 
+            this.logger.debug('Stop app result', {
+                result,
+                fallbackExitCode: result.exitCode || 0,
+                finalExitCode: result.exitCode || 0
+            });
+
             return {
                 type: 'app_stopped',
                 id: message.id,

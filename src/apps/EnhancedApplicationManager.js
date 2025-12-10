@@ -681,6 +681,13 @@ export class EnhancedApplicationManager {
         const containerInfo = await container.inspect();
         const exitCode = containerInfo.State.ExitCode;
 
+        this.logger.debug('Container stopped', {
+            containerId,
+            exitCode,
+            state: containerInfo.State.Status,
+            finishedAt: containerInfo.State.FinishedAt
+        });
+
         // Update total runtime
         const app = await this.db.getApplication(appId);
         if (app && app.last_start) {
