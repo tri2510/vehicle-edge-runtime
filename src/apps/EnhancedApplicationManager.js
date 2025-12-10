@@ -441,7 +441,19 @@ export class EnhancedApplicationManager {
 
         try {
             const runtimeState = await this.db.getRuntimeState(appId);
-            if (!runtimeState || (runtimeState.current_state !== 'running' && runtimeState.current_state !== 'paused')) {
+            if (!runtimeState) {
+                throw new Error(`Application not found: ${appId}`);
+            }
+
+            // If application is already stopped, return the stored exit code
+            if (runtimeState.current_state === 'stopped') {
+                const exitCode = runtimeState.exit_code || 0;
+                this.logger.info('Application already stopped', { appId, exitCode });
+                return { status: 'stopped', appId, exitCode };
+            }
+
+            // If application is not running or paused, it's in an invalid state
+            if (runtimeState.current_state !== 'running' && runtimeState.current_state !== 'paused') {
                 throw new Error(`Application not running or paused: ${appId}`);
             }
 
