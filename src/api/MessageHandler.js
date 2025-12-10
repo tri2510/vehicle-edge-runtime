@@ -80,6 +80,8 @@ export class MessageHandler {
             case 'get-runtime-info':
             case 'get_runtime_info':
                 return await this.handleGetRuntimeInfo(message);
+            case 'report_runtime_state':
+                return await this.handleReportRuntimeState(message);
             case 'ping':
                 return { type: 'pong', id: message.id, timestamp: new Date().toISOString() };
             default:
@@ -398,10 +400,24 @@ export class MessageHandler {
             };
         }
 
-        this.logger.info('Subscribing to vehicle APIs', { clientId, apis });
+        // Extract path strings from API objects
+        const signalPaths = Array.isArray(apis)
+            ? apis.map(api => typeof api === 'string' ? api : api.path).filter(Boolean)
+            : [];
+
+        if (signalPaths.length === 0) {
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'No valid signal paths provided',
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        this.logger.info('Subscribing to vehicle APIs', { clientId, apis, signalPaths });
 
         try {
-            const subscriptionId = await this.runtime.kuksaManager.subscribeToSignals(apis);
+            const subscriptionId = await this.runtime.kuksaManager.subscribeToSignals(signalPaths);
 
             // Store subscription for this client
             if (!this.runtime.apiSubscriptions) {
@@ -481,10 +497,15 @@ export class MessageHandler {
             };
         }
 
-        this.logger.info('Getting vehicle signal values', { apis });
+        // Extract path strings from API objects
+        const signalPaths = Array.isArray(apis)
+            ? apis.map(api => typeof api === 'string' ? api : api.path).filter(Boolean)
+            : [];
+
+        this.logger.info('Getting vehicle signal values', { apis, signalPaths });
 
         try {
-            const values = await this.runtime.kuksaManager.getSignalValues(apis);
+            const values = await this.runtime.kuksaManager.getSignalValues(signalPaths);
 
             return {
                 type: 'signals_value_response',
@@ -1030,6 +1051,53 @@ export class MessageHandler {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to get runtime info: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleReportRuntimeState(message) {
+        this.logger.info('Reporting runtime state');
+
+        try {
+            const runtimeState = {
+                runtimeId: this.runtime.runtimeId || 'runtime-' + Date.now(),
+                status: 'running',
+                startTime: this.runtime.startTime || new Date().toISOString(),
+                version: '1.0.0',
+                capabilities: [
+                    'app_management',
+                    'vehicle_signals',
+                    'python_execution',
+                    'database_persistence',
+                    'console_streaming',
+                    'resource_monitoring'
+                ],
+                connectedServices: {
+                    kuksaManager: !!this.runtime.kuksaManager,
+                    database: !!this.runtime.dbManager,
+                    appManager: !!this.runtime.appManager
+                },
+                statistics: {
+                    totalApps: await this.runtime.appManager.getTotalApplications(),
+                    runningApps: (await this.runtime.appManager.getRunningApplications()).length,
+                    activeSubscriptions: this.runtime.apiSubscriptions ? this.runtime.apiSubscriptions.size : 0
+                }
+            };
+
+            return {
+                type: 'runtime_state_response',
+                id: message.id,
+                runtimeState,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to report runtime state', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to report runtime state: ' + error.message,
                 timestamp: new Date().toISOString()
             };
         }

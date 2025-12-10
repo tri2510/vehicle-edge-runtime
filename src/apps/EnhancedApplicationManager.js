@@ -696,6 +696,14 @@ export class EnhancedApplicationManager {
     async _createPythonContainer(options) {
         const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
 
+        if (!appDir) {
+            throw new Error('Application directory path is required for container creation');
+        }
+
+        if (!entryPoint) {
+            throw new Error('Application entry point is required for container creation');
+        }
+
         const sanitizedId = executionId.replace(/-/g, '');
 
         const containerConfig = {
@@ -736,6 +744,14 @@ export class EnhancedApplicationManager {
 
     async _createBinaryContainer(options) {
         const { executionId, appId, appDir, binaryPath, args, env, workingDir } = options;
+
+        if (!appDir) {
+            throw new Error('Application directory path is required for container creation');
+        }
+
+        if (!binaryPath) {
+            throw new Error('Binary path is required for container creation');
+        }
 
         const sanitizedId = executionId.replace(/-/g, '');
 
@@ -906,5 +922,26 @@ export class EnhancedApplicationManager {
 
         await Promise.all(stopPromises);
         this.logger.info('All applications stopped');
+    }
+
+    /**
+     * Get list of running applications
+     * @returns {Array} Array of running application info
+     */
+    getRunningApplications() {
+        const runningApps = [];
+        for (const [executionId, appInfo] of this.applications) {
+            if (appInfo.status === 'running' || appInfo.status === 'starting') {
+                runningApps.push({
+                    executionId,
+                    appId: appInfo.appId,
+                    name: appInfo.name,
+                    type: appInfo.type,
+                    status: appInfo.status,
+                    startTime: appInfo.startTime
+                });
+            }
+        }
+        return runningApps;
     }
 }
