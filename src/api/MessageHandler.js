@@ -1079,7 +1079,7 @@ export class MessageHandler {
                     appManager: !!this.runtime.appManager
                 },
                 statistics: {
-                    totalApps: await this.runtime.appManager.getTotalApplications(),
+                    totalApps: this.runtime.appManager.applications ? this.runtime.appManager.applications.size : 0,
                     runningApps: (await this.runtime.appManager.getRunningApplications()).length,
                     activeSubscriptions: this.runtime.apiSubscriptions ? this.runtime.apiSubscriptions.size : 0
                 }

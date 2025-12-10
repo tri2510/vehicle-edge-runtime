@@ -204,7 +204,7 @@ export class DatabaseManager {
         const allowedFields = [
             'name', 'version', 'description', 'status', 'config',
             'code', 'entry_point', 'binary_path', 'args', 'env',
-            'working_dir', 'python_deps', 'vehicle_signals', 'updated_at'
+            'working_dir', 'python_deps', 'vehicle_signals', 'data_path', 'updated_at'
         ];
 
         const setClause = [];

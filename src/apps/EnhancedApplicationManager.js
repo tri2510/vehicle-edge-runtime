@@ -91,7 +91,19 @@ export class EnhancedApplicationManager {
 
             // Update application in database with final data
             const applicationData = {
-                ...appData,
+                id: appData.id,
+                name: appData.name,
+                version: appData.version,
+                description: appData.description,
+                type: appData.type,
+                code: appData.code,
+                entry_point: appData.entryPoint, // Map from camelCase to snake_case
+                binary_path: appData.binaryPath,
+                args: appData.args,
+                env: appData.env,
+                working_dir: appData.workingDir,
+                python_deps: appData.python_deps,
+                vehicle_signals: appData.vehicle_signals,
                 status: 'installed',
                 data_path: appDir
             };

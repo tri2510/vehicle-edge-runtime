@@ -5,6 +5,8 @@
 
 import { EventEmitter } from 'events';
 import { Logger } from '../utils/Logger.js';
+import fs from 'fs-extra';
+import path from 'path';
 
 export class KuksaManager extends EventEmitter {
     constructor(options = {}) {
@@ -269,8 +271,6 @@ export class KuksaManager extends EventEmitter {
 
     async _loadVSSConfiguration() {
         try {
-            const fs = await import('fs-extra');
-
             if (await fs.pathExists(this.options.vssPath)) {
                 const vssContent = await fs.readFile(this.options.vssPath, 'utf8');
                 this.vssData = JSON.parse(vssContent);
@@ -300,6 +300,16 @@ export class KuksaManager extends EventEmitter {
                     "max": 300,
                     "description": "Vehicle speed"
                 },
+                "Steering": {
+                    "Angle": {
+                        "datatype": "float",
+                        "type": "sensor",
+                        "unit": "degrees",
+                        "min": -180,
+                        "max": 180,
+                        "description": "Steering wheel angle"
+                    }
+                },
                 "Engine": {
                     "RPM": {
                         "datatype": "uint16",
@@ -328,11 +338,22 @@ export class KuksaManager extends EventEmitter {
                     }
                 },
                 "Body": {
+                    "Cabin": {
+                        "Lights": {
+                            "IsOn": {
+                                "datatype": "boolean",
+                                "type": "actuator",
+                                "description": "Cabin light status"
+                            }
+                        }
+                    }
+                },
+                "Cabin": {
                     "Lights": {
-                        "IsLightOn": {
+                        "IsOn": {
                             "datatype": "boolean",
                             "type": "actuator",
-                            "description": "Light status"
+                            "description": "Cabin light status"
                         }
                     }
                 }
