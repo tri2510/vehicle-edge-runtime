@@ -81,13 +81,14 @@ export class MessageHandler {
             case 'get_runtime_info':
                 return await this.handleGetRuntimeInfo(message);
             case 'ping':
-                return { type: 'pong', timestamp: new Date().toISOString() };
+                return { type: 'pong', id: message.id, timestamp: new Date().toISOString() };
             default:
                 this.logger.warn('Unknown message type', { type: message.type });
                 return {
                     type: 'error',
-                    error: `Unknown message type: ${message.type}`,
-                    timestamp: new Date().toISOString()
+                id: message.id,
+                error: `Unknown message type: ${message.type}`,
+                timestamp: new Date().toISOString()
                 };
         }
     }
@@ -100,6 +101,7 @@ export class MessageHandler {
 
             return {
                 type: 'kit_registered',
+                id: message.id,
                 kit,
                 timestamp: new Date().toISOString()
             };
@@ -108,6 +110,7 @@ export class MessageHandler {
             this.logger.error('Failed to register kit', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to register kit: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -119,10 +122,11 @@ export class MessageHandler {
 
         return {
             type: 'client_registered',
-            clientId,
-            runtimeId: this.runtime.runtimeId,
-            capabilities: this.runtime.registry.getCapabilities(),
-            timestamp: new Date().toISOString()
+                id: message.id,
+                clientId,
+                runtimeId: this.runtime.runtimeId,
+                capabilities: this.runtime.registry.getCapabilities(),
+                timestamp: new Date().toISOString()
         };
     }
 
@@ -133,9 +137,10 @@ export class MessageHandler {
 
         return {
             type: 'kits_list',
-            kits,
-            count: kits.length,
-            timestamp: new Date().toISOString()
+                id: message.id,
+                kits,
+                count: kits.length,
+                timestamp: new Date().toISOString()
         };
     }
 
@@ -158,6 +163,7 @@ export class MessageHandler {
 
             return {
                 type: 'python_app_started',
+                id: message.id,
                 executionId,
                 appId,
                 status: result.status,
@@ -168,6 +174,7 @@ export class MessageHandler {
             this.logger.error('Failed to run Python app', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to run Python app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -194,6 +201,7 @@ export class MessageHandler {
 
             return {
                 type: 'binary_app_started',
+                id: message.id,
                 executionId,
                 appId,
                 status: result.status,
@@ -204,6 +212,7 @@ export class MessageHandler {
             this.logger.error('Failed to run binary app', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to run binary app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -222,6 +231,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_status',
+                id: message.id,
                 executionId,
                 status,
                 timestamp: new Date().toISOString()
@@ -231,6 +241,7 @@ export class MessageHandler {
             this.logger.error('Failed to get app status', { executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get app status: ' + error.message,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -248,6 +259,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_output_response',
+                id: message.id,
                 executionId,
                 output,
                 timestamp: new Date().toISOString()
@@ -257,6 +269,7 @@ export class MessageHandler {
             this.logger.error('Failed to get app output', { executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get app output: ' + error.message,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -274,6 +287,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_log_response',
+                id: message.id,
                 executionId,
                 logs,
                 timestamp: new Date().toISOString()
@@ -283,6 +297,7 @@ export class MessageHandler {
             this.logger.error('Failed to get app logs', { executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get app logs: ' + error.message,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -300,6 +315,7 @@ export class MessageHandler {
 
             return {
                 type: 'console_subscribed',
+                id: message.id,
                 clientId,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -309,6 +325,7 @@ export class MessageHandler {
             this.logger.error('Failed to subscribe to console', { clientId, executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to subscribe to console: ' + error.message,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -326,6 +343,7 @@ export class MessageHandler {
 
             return {
                 type: 'console_unsubscribed',
+                id: message.id,
                 clientId,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -335,6 +353,7 @@ export class MessageHandler {
             this.logger.error('Failed to unsubscribe from console', { clientId, executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to unsubscribe from console: ' + error.message,
                 executionId,
                 timestamp: new Date().toISOString()
@@ -350,6 +369,7 @@ export class MessageHandler {
 
         return {
             type: 'runtime_state_response',
+                id: message.id,
             runtimeState: {
                 ...state,
                 runningApplications: runningApps.map(app => ({
@@ -372,6 +392,7 @@ export class MessageHandler {
         if (!this.runtime.kuksaManager) {
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Kuksa manager not available',
                 timestamp: new Date().toISOString()
             };
@@ -394,6 +415,7 @@ export class MessageHandler {
 
             return {
                 type: 'apis_subscribed',
+                id: message.id,
                 subscriptionId,
                 apis,
                 kit_id: this.runtime.runtimeId,
@@ -404,6 +426,7 @@ export class MessageHandler {
             this.logger.error('Failed to subscribe to APIs', { clientId, apis, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to subscribe to APIs: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -416,6 +439,7 @@ export class MessageHandler {
         if (!this.runtime.kuksaManager) {
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Kuksa manager not available',
                 timestamp: new Date().toISOString()
             };
@@ -428,6 +452,7 @@ export class MessageHandler {
 
             return {
                 type: 'signals_written',
+                id: message.id,
                 response,
                 kit_id: this.runtime.runtimeId,
                 timestamp: new Date().toISOString()
@@ -437,6 +462,7 @@ export class MessageHandler {
             this.logger.error('Failed to write signal values', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to write signal values: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -449,6 +475,7 @@ export class MessageHandler {
         if (!this.runtime.kuksaManager) {
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Kuksa manager not available',
                 timestamp: new Date().toISOString()
             };
@@ -461,6 +488,7 @@ export class MessageHandler {
 
             return {
                 type: 'signals_value_response',
+                id: message.id,
                 result: values,
                 kit_id: this.runtime.runtimeId,
                 timestamp: new Date().toISOString()
@@ -470,6 +498,7 @@ export class MessageHandler {
             this.logger.error('Failed to get signal values', { apis, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get signal values: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -496,6 +525,7 @@ export class MessageHandler {
 
             return {
                 type: 'vehicle_model_generated',
+                id: message.id,
                 success: true,
                 vssPath,
                 timestamp: new Date().toISOString()
@@ -505,6 +535,7 @@ export class MessageHandler {
             this.logger.error('Failed to generate vehicle model', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to generate vehicle model: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -526,6 +557,7 @@ export class MessageHandler {
 
             return {
                 type: 'vehicle_model_reverted',
+                id: message.id,
                 success: true,
                 timestamp: new Date().toISOString()
             };
@@ -534,6 +566,7 @@ export class MessageHandler {
             this.logger.error('Failed to revert vehicle model', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to revert vehicle model: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -555,6 +588,7 @@ export class MessageHandler {
 
             return {
                 type: 'mock_signal_list',
+                id: message.id,
                 data: mockSignals.map(signal => ({
                     ...signal,
                     value: cachedValues[signal.path]?.value || null
@@ -566,6 +600,7 @@ export class MessageHandler {
             this.logger.error('Failed to list mock signals', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to list mock signals: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -578,6 +613,7 @@ export class MessageHandler {
         if (!this.runtime.kuksaManager) {
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Kuksa manager not available',
                 timestamp: new Date().toISOString()
             };
@@ -595,6 +631,7 @@ export class MessageHandler {
 
             return {
                 type: 'mock_signals_set',
+                id: message.id,
                 success: true,
                 signalCount: data.length,
                 timestamp: new Date().toISOString()
@@ -604,6 +641,7 @@ export class MessageHandler {
             this.logger.error('Failed to set mock signals', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to set mock signals: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -713,6 +751,7 @@ export class MessageHandler {
 
             return {
                 type: 'deploy_request-response',
+                id: message.id,
                 cmd: 'deploy_request',
                 executionId,
                 appId,
@@ -728,6 +767,7 @@ export class MessageHandler {
             this.logger.error('Failed to deploy application', { error: error.message });
             return {
                 type: 'deploy_request-response',
+                id: message.id,
                 cmd: 'deploy_request',
                 error: 'Failed to deploy application: ' + error.message,
                 isDone: true,
@@ -759,6 +799,7 @@ export class MessageHandler {
 
             return {
                 type: 'list_deployed_apps-response',
+                id: message.id,
                 apps,
                 total_count: apps.length,
                 running_count: apps.filter(app => app.status === 'running').length,
@@ -769,6 +810,7 @@ export class MessageHandler {
             this.logger.error('Failed to list deployed apps', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to list deployed apps: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -809,6 +851,7 @@ export class MessageHandler {
 
             return {
                 type: 'manage_app-response',
+                id: message.id,
                 app_id,
                 action,
                 status: result.status,
@@ -819,6 +862,7 @@ export class MessageHandler {
             this.logger.error('Failed to manage application', { app_id, action, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: `Failed to ${action} application: ${error.message}`,
                 app_id,
                 action,
@@ -836,6 +880,7 @@ export class MessageHandler {
             if (!this.runtime.kuksaManager) {
                 return {
                     type: 'check_signal_conflicts-response',
+                id: message.id,
                     deployment_precheck: {
                         app_id,
                         signals_required: signals.map(signal => ({
@@ -880,6 +925,7 @@ export class MessageHandler {
 
             return {
                 type: 'check_signal_conflicts-response',
+                id: message.id,
                 deployment_precheck: {
                     app_id,
                     signals_required: validatedSignals,
@@ -894,6 +940,7 @@ export class MessageHandler {
             this.logger.error('Failed to check signal conflicts', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to check signal conflicts: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -924,6 +971,7 @@ export class MessageHandler {
 
             return {
                 type: 'get_vss_config-response',
+                id: message.id,
                 vss_config: vssConfig,
                 last_updated: new Date().toISOString(),
                 signal_count: this.runtime.kuksaManager?.signalValues?.size || 0,
@@ -934,6 +982,7 @@ export class MessageHandler {
             this.logger.error('Failed to get VSS config', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get VSS config: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -966,6 +1015,7 @@ export class MessageHandler {
 
             return {
                 type: 'get-runtime-info-response',
+                id: message.id,
                 kit_id: this.runtime.runtimeId,
                 data: {
                     lsOfRunner,
@@ -978,6 +1028,7 @@ export class MessageHandler {
             this.logger.error('Failed to get runtime info', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get runtime info: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -994,6 +1045,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_paused',
+                id: message.id,
                 appId,
                 status: result.status,
                 timestamp: new Date().toISOString()
@@ -1003,6 +1055,7 @@ export class MessageHandler {
             this.logger.error('Failed to pause app', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to pause app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -1020,6 +1073,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_resumed',
+                id: message.id,
                 appId,
                 status: result.status,
                 timestamp: new Date().toISOString()
@@ -1029,6 +1083,7 @@ export class MessageHandler {
             this.logger.error('Failed to resume app', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to resume app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -1046,9 +1101,10 @@ export class MessageHandler {
 
             return {
                 type: 'app_installed',
+                id: message.id,
                 appId: result.appId,
                 name: result.name,
-                type: result.type,
+                appType: result.type,
                 status: result.status,
                 appDir: result.appDir,
                 timestamp: new Date().toISOString()
@@ -1058,6 +1114,7 @@ export class MessageHandler {
             this.logger.error('Failed to install app', { appId: appData.id, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to install app: ' + error.message,
                 appId: appData.id,
                 timestamp: new Date().toISOString()
@@ -1075,6 +1132,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_uninstalled',
+                id: message.id,
                 appId,
                 status: result.status,
                 timestamp: new Date().toISOString()
@@ -1084,6 +1142,7 @@ export class MessageHandler {
             this.logger.error('Failed to uninstall app', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to uninstall app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -1100,7 +1159,8 @@ export class MessageHandler {
             const apps = await this.runtime.appManager.listApplications(filters);
 
             return {
-                type: 'apps_listed',
+                type: 'apps_list',
+                id: message.id,
                 apps,
                 count: apps.length,
                 filters,
@@ -1111,6 +1171,7 @@ export class MessageHandler {
             this.logger.error('Failed to list apps', { error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to list apps: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -1127,6 +1188,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_logs',
+                id: message.id,
                 appId,
                 logs,
                 options,
@@ -1137,6 +1199,7 @@ export class MessageHandler {
             this.logger.error('Failed to get app logs', { appId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get app logs: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
@@ -1165,6 +1228,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_stopped',
+                id: message.id,
                 appId: appId || result.appId,
                 executionId: executionId || result.executionId,
                 status: result.status,
@@ -1176,6 +1240,7 @@ export class MessageHandler {
             this.logger.error('Failed to stop app', { appId, executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to stop app: ' + error.message,
                 appId,
                 executionId,
@@ -1204,6 +1269,7 @@ export class MessageHandler {
 
             return {
                 type: 'app_status',
+                id: message.id,
                 status,
                 timestamp: new Date().toISOString()
             };
@@ -1212,6 +1278,7 @@ export class MessageHandler {
             this.logger.error('Failed to get app status', { appId, executionId, error: error.message });
             return {
                 type: 'error',
+                id: message.id,
                 error: 'Failed to get app status: ' + error.message,
                 appId,
                 executionId,

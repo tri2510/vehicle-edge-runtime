@@ -66,8 +66,16 @@ export class EnhancedApplicationManager {
         this.logger.info('Installing application', { appId: id, name, type });
 
         try {
-            // Update application status to installing
-            await this.db.updateApplication(id, { status: 'installing' });
+            // Create application in database first
+            const existingApp = await this.db.getApplication(id);
+            if (existingApp) {
+                // Update existing application status to installing
+                await this.db.updateApplication(id, { status: 'installing' });
+            } else {
+                // Create new application with installing status
+                appData.status = 'installing';
+                await this.db.createApplication(appData);
+            }
             await this.db.addLog(id, 'status', 'Application installation started', 'info');
 
             // Validate application data
@@ -81,13 +89,13 @@ export class EnhancedApplicationManager {
             // Create application directories and files
             const appDir = await this._prepareApplicationStorage(appData);
 
-            // Store application in database
+            // Update application in database with final data
             const applicationData = {
                 ...appData,
                 status: 'installed',
                 data_path: appDir
             };
-            await this.db.createApplication(applicationData);
+            await this.db.updateApplication(id, applicationData);
 
             // Log installation success
             await this.db.addLog(id, 'status', 'Application installed successfully', 'info');

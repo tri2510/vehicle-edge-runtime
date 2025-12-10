@@ -50,59 +50,33 @@ export class WebSocketHandler {
     handleKitManagerCommand(message) {
         this.logger.debug('Handling Kit Manager command', { type: message.type });
 
-        switch (message.type) {
-            case 'register_kit':
-                return this.messageHandler.handleRegisterKit(message);
-            case 'register_client':
-                return this.messageHandler.handleRegisterClient(message);
-            case 'list-all-kits':
-                return this.messageHandler.handleListAllKits(message);
-            case 'run_python_app':
-                return this.messageHandler.handleRunPythonApp(message);
-            case 'run_binary_app':
-                return this.messageHandler.handleRunBinaryApp(message);
-            case 'stop_app':
-                return this.messageHandler.handleStopApp(message);
-            case 'get_app_status':
-                return this.messageHandler.handleGetAppStatus(message);
-            case 'app_output':
-                return this.messageHandler.handleAppOutput(message);
-            case 'app_log':
-                return this.messageHandler.handleAppLog(message);
-            case 'console_subscribe':
-                return this.messageHandler.handleConsoleSubscribe(message);
-            case 'console_unsubscribe':
-                return this.messageHandler.handleConsoleUnsubscribe(message);
-            case 'subscribe_apis':
-                return this.messageHandler.handleSubscribeApis(message);
-            case 'write_signals_value':
-                return this.messageHandler.handleWriteSignalsValue(message);
-            case 'get_signals_value':
-                return this.messageHandler.handleGetSignalsValue(message);
-            case 'generate_vehicle_model':
-                return this.messageHandler.handleGenerateVehicleModel(message);
-            case 'revert_vehicle_model':
-                return this.messageHandler.handleRevertVehicleModel(message);
-            case 'list_mock_signal':
-                return this.messageHandler.handleListMockSignal(message);
-            case 'set_mock_signals':
-                return this.messageHandler.handleSetMockSignals(message);
-            case 'report-runtime-state':
-                return this.messageHandler.handleReportRuntimeState(message);
-            default:
-                this.logger.warn('Unknown command type', { type: message.type });
-                return this._sendError(message, `Unknown command type: ${message.type}`);
-        }
+        // Use the MessageHandler to process all message types
+        return this.messageHandler.processMessage(null, message);
     }
 
     async _handleMessage(clientId, data) {
         try {
-            const message = JSON.parse(data.toString());
-            this.logger.debug('Received WebSocket message', { clientId, type: message.type });
+            const rawData = data.toString();
+            this.logger.info('WebSocket message received', {
+                clientId,
+                rawData: rawData.substring(0, 100),
+                messageLength: rawData.length
+            });
+
+            const message = JSON.parse(rawData);
+            this.logger.info('Parsed WebSocket message', { clientId, type: message.type, hasId: !!message.id });
 
             const response = await this.messageHandler.processMessage(clientId, message);
+
             if (response) {
+                this.logger.info('Sending response to client', {
+                    clientId,
+                    responseType: response.type,
+                    hasId: !!response.id
+                });
                 this._sendToClient(clientId, response);
+            } else {
+                this.logger.warn('No response from message handler', { clientId, type: message.type });
             }
 
         } catch (error) {
@@ -128,8 +102,22 @@ export class WebSocketHandler {
 
     _sendToClient(clientId, message) {
         const clientInfo = this.runtime.clients.get(clientId);
-        if (clientInfo && clientInfo.client.readyState === clientInfo.client.OPEN) {
+        this.logger.debug('Attempting to send message to client', {
+            clientId,
+            clientExists: !!clientInfo,
+            readyState: clientInfo?.client?.readyState,
+            message: JSON.stringify(message).substring(0, 100)
+        });
+
+        if (clientInfo && clientInfo.client.readyState === 1) { // WebSocket.OPEN = 1
             clientInfo.client.send(JSON.stringify(message));
+            this.logger.debug('Message sent successfully to client', { clientId });
+        } else {
+            this.logger.warn('Failed to send message to client - client not ready', {
+                clientId,
+                clientExists: !!clientInfo,
+                readyState: clientInfo?.client?.readyState
+            });
         }
     }
 
