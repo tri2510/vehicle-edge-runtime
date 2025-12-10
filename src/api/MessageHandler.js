@@ -30,8 +30,20 @@ export class MessageHandler {
                 return await this.handleRunCppApp(message);
             case 'stop_app':
                 return await this.handleStopApp(message);
+            case 'pause_app':
+                return await this.handlePauseApp(message);
+            case 'resume_app':
+                return await this.handleResumeApp(message);
+            case 'install_app':
+                return await this.handleInstallApp(message);
+            case 'uninstall_app':
+                return await this.handleUninstallApp(message);
             case 'get_app_status':
                 return await this.handleGetAppStatus(message);
+            case 'list_apps':
+                return await this.handleListApps(message);
+            case 'get_app_logs':
+                return await this.handleGetAppLogs(message);
             case 'app_output':
                 return await this.handleAppOutput(message);
             case 'app_log':
@@ -199,33 +211,7 @@ export class MessageHandler {
         }
     }
 
-    async handleStopApp(message) {
-        const { executionId } = message;
-
-        this.logger.info('Stopping application', { executionId });
-
-        try {
-            const result = await this.runtime.appManager.stopApplication(executionId);
-
-            return {
-                type: 'app_stopped',
-                executionId,
-                status: result.status,
-                exitCode: result.exitCode,
-                timestamp: new Date().toISOString()
-            };
-
-        } catch (error) {
-            this.logger.error('Failed to stop app', { executionId, error: error.message });
-            return {
-                type: 'error',
-                error: 'Failed to stop app: ' + error.message,
-                executionId,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-
+    
     async handleGetAppStatus(message) {
         const { executionId } = message;
 
@@ -993,6 +979,242 @@ export class MessageHandler {
             return {
                 type: 'error',
                 error: 'Failed to get runtime info: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handlePauseApp(message) {
+        const { appId } = message;
+
+        this.logger.info('Pausing application', { appId });
+
+        try {
+            const result = await this.runtime.appManager.pauseApplication(appId);
+
+            return {
+                type: 'app_paused',
+                appId,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to pause app', { appId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to pause app: ' + error.message,
+                appId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleResumeApp(message) {
+        const { appId } = message;
+
+        this.logger.info('Resuming application', { appId });
+
+        try {
+            const result = await this.runtime.appManager.resumeApplication(appId);
+
+            return {
+                type: 'app_resumed',
+                appId,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to resume app', { appId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to resume app: ' + error.message,
+                appId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleInstallApp(message) {
+        const { appData } = message;
+
+        this.logger.info('Installing application', { appId: appData.id, name: appData.name });
+
+        try {
+            const result = await this.runtime.appManager.installApplication(appData);
+
+            return {
+                type: 'app_installed',
+                appId: result.appId,
+                name: result.name,
+                type: result.type,
+                status: result.status,
+                appDir: result.appDir,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to install app', { appId: appData.id, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to install app: ' + error.message,
+                appId: appData.id,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleUninstallApp(message) {
+        const { appId } = message;
+
+        this.logger.info('Uninstalling application', { appId });
+
+        try {
+            const result = await this.runtime.appManager.uninstallApplication(appId);
+
+            return {
+                type: 'app_uninstalled',
+                appId,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to uninstall app', { appId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to uninstall app: ' + error.message,
+                appId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleListApps(message) {
+        const { filters = {} } = message;
+
+        this.logger.info('Listing applications', { filters });
+
+        try {
+            const apps = await this.runtime.appManager.listApplications(filters);
+
+            return {
+                type: 'apps_listed',
+                apps,
+                count: apps.length,
+                filters,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to list apps', { error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to list apps: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGetAppLogs(message) {
+        const { appId, options = {} } = message;
+
+        this.logger.info('Getting application logs', { appId, options });
+
+        try {
+            const logs = await this.runtime.appManager.getApplicationLogs(appId, options);
+
+            return {
+                type: 'app_logs',
+                appId,
+                logs,
+                options,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get app logs', { appId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to get app logs: ' + error.message,
+                appId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    // Update existing handlers to use appId instead of executionId for enhanced lifecycle
+    async handleStopApp(message) {
+        const { appId, executionId } = message;
+
+        this.logger.info('Stopping application', { appId, executionId });
+
+        try {
+            // For backward compatibility, try appId first, then executionId
+            let result;
+            if (appId) {
+                result = await this.runtime.appManager.stopApplication(appId);
+            } else if (executionId) {
+                // Legacy support - find app by executionId
+                const app = await this.runtime.appManager.getApplicationByExecutionId(executionId);
+                result = await this.runtime.appManager.stopApplication(app.appId);
+            } else {
+                throw new Error('Either appId or executionId is required');
+            }
+
+            return {
+                type: 'app_stopped',
+                appId: appId || result.appId,
+                executionId: executionId || result.executionId,
+                status: result.status,
+                exitCode: result.exitCode,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to stop app', { appId, executionId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to stop app: ' + error.message,
+                appId,
+                executionId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleGetAppStatus(message) {
+        const { appId, executionId } = message;
+
+        this.logger.info('Getting application status', { appId, executionId });
+
+        try {
+            // For backward compatibility, try appId first, then executionId
+            let status;
+            if (appId) {
+                status = await this.runtime.appManager.getApplicationStatus(appId);
+            } else if (executionId) {
+                // Legacy support - find app by executionId
+                const app = await this.runtime.appManager.getApplicationByExecutionId(executionId);
+                status = await this.runtime.appManager.getApplicationStatus(app.appId);
+            } else {
+                throw new Error('Either appId or executionId is required');
+            }
+
+            return {
+                type: 'app_status',
+                status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get app status', { appId, executionId, error: error.message });
+            return {
+                type: 'error',
+                error: 'Failed to get app status: ' + error.message,
+                appId,
+                executionId,
                 timestamp: new Date().toISOString()
             };
         }

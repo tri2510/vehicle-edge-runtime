@@ -9,7 +9,7 @@ import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { io } from 'socket.io-client';
 import { RuntimeRegistry } from './RuntimeRegistry.js';
-import { ApplicationManager } from '../apps/ApplicationManager.js';
+import { EnhancedApplicationManager } from '../apps/EnhancedApplicationManager.js';
 import { ConsoleManager } from '../console/ConsoleManager.js';
 import { WebSocketHandler } from '../api/WebSocketHandler.js';
 import { KuksaManager } from '../vehicle/KuksaManager.js';
@@ -41,7 +41,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
         // Managers
         this.registry = new RuntimeRegistry(this.options);
-        this.appManager = new ApplicationManager(this.options);
+        this.appManager = new EnhancedApplicationManager(this.options);
         this.consoleManager = new ConsoleManager(this.options);
         this.kuksaManager = new KuksaManager({
             kuksaUrl: this.options.kuksaUrl,
