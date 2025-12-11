@@ -18,6 +18,7 @@ KUKSA_CONTAINER_NAME="kuksa-databroker"
 KUKSA_NETWORK="kuksa"
 KUKSA_HOST="localhost"
 KUKSA_GRPC_PORT=55555
+KUKSA_HTTP_PORT=8090
 VSS_CONFIG_DIR="./data/configs"
 VSS_FILE="$VSS_CONFIG_DIR/vss.json"
 PID_FILE="./kuksa-server.pid"
@@ -340,10 +341,13 @@ start_kuksa_container() {
         --name "$KUKSA_CONTAINER_NAME" \
         --network "$KUKSA_NETWORK" \
         -p "$KUKSA_GRPC_PORT:55555" \
+        -p "$KUKSA_HTTP_PORT:8090" \
         -v "$VSS_VOLUME_NAME:/config" \
         "$KUKSA_IMAGE" \
         --insecure \
-        --vss /config/vss.json
+        --vss /config/vss.json \
+        --enable-viss \
+        --viss-port 8090
 
     # Store container information for later use
     echo "$KUKSA_CONTAINER_NAME" > "$PID_FILE"

@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package kuksa.val.v1;
+
+// Basic Kuksa protobuf definitions for Vehicle Edge Runtime
+service Val {
+  rpc Get (GetRequest) returns (GetResponse) {}
+  rpc Set (SetRequest) returns (SetResponse) {}
+  rpc Subscribe (SubscribeRequest) returns (stream SubscribeResponse) {}
+  rpc Unsubscribe (UnsubscribeRequest) returns (UnsubscribeResponse) {}
+}
+
+message Datapoint {
+  oneof value {
+    bool bool_value = 1;
+    int32 int32_value = 2;
+    int64 int64_value = 3;
+    uint32 uint32_value = 4;
+    uint64 uint64_value = 5;
+    float float_value = 6;
+    double double_value = 7;
+    string string_value = 8;
+  }
+  uint64 timestamp = 9;
+}
+
+message Field {
+  string path = 1;
+  Datapoint value = 2;
+  repeated Field fields = 3;
+  string actuator_target = 4;
+  string attribute = 5;
+}
+
+message GetRequest {
+  string entries_id = 1;
+  repeated Field fields = 2;
+}
+
+message GetResponse {
+  repeated Field fields = 1;
+}
+
+message SetRequest {
+  string entries_id = 1;
+  repeated Field fields = 2;
+  repeated string upstream_metadata_request = 3;
+}
+
+message SetResponse {
+  repeated Field fields = 1;
+}
+
+message SubscribeRequest {
+  string entries_id = 1;
+  repeated Field fields = 2;
+  uint64 compression_algorithm = 3;
+  uint32 lease_seconds = 4;
+  repeated string subscribe_metadata = 5;
+}
+
+message SubscribeResponse {
+  enum UpdateType {
+    UPDATE_TYPE_UNSPECIFIED = 0;
+    SUBSCRIPTION_NOTIFICATION = 1;
+    SUBSCRIPTION_ERROR = 2;
+    SUBSCRIPTION_TERMINATE = 3;
+  }
+  UpdateType update_type = 1;
+  repeated Field fields = 2;
+  string ts = 3;
+  string transaction_id = 4;
+  string error = 5;
+  repeated SubscribeMetadataEntry subscribe_metadata = 6;
+}
+
+message SubscribeMetadataEntry {
+  string key = 1;
+  string value = 2;
+}
+
+message UnsubscribeRequest {
+  string subscribe_id = 1;
+  string entries_id = 2;
+  string transaction_id = 3;
+}
+
+message UnsubscribeResponse {}

@@ -1,0 +1,18 @@
+{
+  "runtime": {
+    "port": 3002,
+    "healthPort": 3003,
+    "kuksaEnabled": false,
+    "logLevel": "info"
+  },
+  "applications": {
+    "defaultLanguage": "python",
+    "defaultTimeout": 30000,
+    "maxConcurrentApps": 10
+  },
+  "resources": {
+    "memoryLimit": "512m",
+    "cpuLimit": "1.0",
+    "diskLimit": "1g"
+  }
+}

@@ -17,15 +17,18 @@ cd vehicle-edge-runtime
 npm install
 ```
 
-### **Precondition: Start Full Stack**
+### **Precondition: Start Full Stack (REQUIRED)**
 ```bash
-# 1. Start Kuksa Databroker (Vehicle Data Server)
+# 1. Start Kuksa Databroker (Vehicle Data Server) - MANDATORY
 ./simulation/6-start-kuksa-server.sh
 
-# 2. Start Kit Manager (API Gateway)
+# 2. Verify Kuksa is fully operational (REQUIRED)
+curl http://localhost:55555/vss
+
+# 3. Start Kit Manager (API Gateway)
 ./simulation/1-start-kit-manager.sh
 
-# 3. Start Vehicle Edge Runtime
+# 4. Start Vehicle Edge Runtime with Kuksa integration (REQUIRED)
 KUKSA_ENABLED=true KUKSA_HOST=localhost KUKSA_GRPC_PORT=55555 PORT=3002 node src/index.js
 ```
 
@@ -871,12 +874,17 @@ curl http://localhost:3090/listAllKits  # Test Kit Manager
 - ✅ Multiple apps can run simultaneously without interference
 - ✅ Error handling works gracefully
 - ✅ Console output streaming works for all apps
+- ✅ Kuksa databroker is REQUIRED and MUST be operational
+- ✅ Real vehicle signal operations MUST work
+- ✅ Test execution FAILS without Kuksa connectivity
 
 ### **Should Pass**:
-- ✅ Vehicle signal APIs handle gracefully without Kuksa
+- ✅ Vehicle signal APIs work with REAL Kuksa databroker
 - ✅ App lifecycle management (install/run/stop/uninstall)
 - ✅ Resource usage remains reasonable
 - ✅ WebSocket connections stable under load
+- ✅ Real vehicle signal reading/writing works
+- ✅ Kuksa authentication and authorization works
 
 ### **Test Coverage Goals**:
 - ✅ **API Coverage**: All main message types tested
