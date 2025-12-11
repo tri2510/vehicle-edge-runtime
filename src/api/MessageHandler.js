@@ -62,10 +62,6 @@ export class MessageHandler {
                 return await this.handleGenerateVehicleModel(message);
             case 'revert_vehicle_model':
                 return await this.handleRevertVehicleModel(message);
-            case 'list_mock_signal':
-                return await this.handleListMockSignal(message);
-            case 'set_mock_signals':
-                return await this.handleSetMockSignals(message);
             case 'deploy_request':
             case 'deploy-request':
                 return await this.handleDeployRequest(message);
@@ -563,104 +559,6 @@ export class MessageHandler {
                 error: 'Failed to revert vehicle model: ' + error.message,
                 timestamp: new Date().toISOString()
             };
-        }
-    }
-
-    async handleListMockSignal(message) {
-        this.logger.info('Listing mock signals');
-
-        try {
-            const vssTree = this.runtime.kuksaManager?.getVSSTree();
-            const cachedValues = this.runtime.kuksaManager?.getCachedSignalValues() || {};
-
-            // Format mock signals list
-            const mockSignals = [];
-            if (vssTree) {
-                this._extractSignalsFromVSS(vssTree, '', mockSignals);
-            }
-
-            return {
-                type: 'mock_signal_list',
-                id: message.id,
-                data: mockSignals.map(signal => ({
-                    ...signal,
-                    value: cachedValues[signal.path]?.value || null
-                })),
-                timestamp: new Date().toISOString()
-            };
-
-        } catch (error) {
-            this.logger.error('Failed to list mock signals', { error: error.message });
-            return {
-                type: 'error',
-                id: message.id,
-                error: 'Failed to list mock signals: ' + error.message,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-
-    async handleSetMockSignals(message) {
-        const { data } = message;
-
-        if (!this.runtime.kuksaManager) {
-            return {
-                type: 'error',
-                id: message.id,
-                error: 'Kuksa manager not available',
-                timestamp: new Date().toISOString()
-            };
-        }
-
-        this.logger.info('Setting mock signals', { signalCount: data.length });
-
-        try {
-            const signalUpdates = {};
-            for (const signal of data) {
-                signalUpdates[signal.name] = signal.value;
-            }
-
-            await this.runtime.kuksaManager.setSignalValues(signalUpdates);
-
-            return {
-                type: 'mock_signals_set',
-                id: message.id,
-                success: true,
-                signalCount: data.length,
-                timestamp: new Date().toISOString()
-            };
-
-        } catch (error) {
-            this.logger.error('Failed to set mock signals', { error: error.message });
-            return {
-                type: 'error',
-                id: message.id,
-                error: 'Failed to set mock signals: ' + error.message,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-
-    _extractSignalsFromVSS(vssNode, basePath, signals) {
-        for (const [key, value] of Object.entries(vssNode)) {
-            const path = basePath ? `${basePath}.${key}` : key;
-
-            if (value.datatype) {
-                // This is a signal
-                signals.push({
-                    path,
-                    name: path,
-                    datatype: value.datatype,
-                    type: value.type,
-                    unit: value.unit,
-                    description: value.description,
-                    min: value.min,
-                    max: value.max
-                });
-            } else if (typeof value === 'object') {
-                // This is a branch, recurse
-                this._extractSignalsFromVSS(value, path, signals);
-            }
         }
     }
 
