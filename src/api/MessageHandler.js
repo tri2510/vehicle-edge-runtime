@@ -222,142 +222,114 @@ export class MessageHandler {
         }
     }
 
-    
-    async handleGetAppStatus(message) {
-        const { executionId } = message;
-
-        this.logger.debug('Getting application status', { executionId });
-
-        try {
-            const status = await this.runtime.appManager.getApplicationStatus(executionId);
-
-            return {
-                type: 'app_status',
-                id: message.id,
-                executionId,
-                status,
-                timestamp: new Date().toISOString()
-            };
-
-        } catch (error) {
-            this.logger.error('Failed to get app status', { executionId, error: error.message });
-            return {
-                type: 'error',
-                id: message.id,
-                error: 'Failed to get app status: ' + error.message,
-                executionId,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-
+  
     async handleAppOutput(message) {
-        const { executionId, lines = 100 } = message;
+        const { appId, lines = 100 } = message;
 
-        this.logger.debug('Getting application output', { executionId, lines });
+        this.logger.debug('Getting application output', { appId, lines });
 
         try {
-            const output = await this.runtime.consoleManager.getAppOutput(executionId, lines);
+            const output = await this.runtime.consoleManager.getAppOutput(appId, lines);
 
             return {
                 type: 'app_output_response',
                 id: message.id,
-                executionId,
+                appId,
                 output,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to get app output', { executionId, error: error.message });
+            this.logger.error('Failed to get app output', { appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to get app output: ' + error.message,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
         }
     }
 
     async handleAppLog(message) {
-        const { executionId, lines = 100 } = message;
+        const { appId, lines = 100 } = message;
 
-        this.logger.debug('Getting application logs', { executionId, lines });
+        this.logger.debug('Getting application logs', { appId, lines });
 
         try {
-            const logs = await this.runtime.consoleManager.getAppLogs(executionId, lines);
+            const logs = await this.runtime.consoleManager.getAppLogs(appId, lines);
 
             return {
                 type: 'app_log_response',
                 id: message.id,
-                executionId,
+                appId,
                 logs,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to get app logs', { executionId, error: error.message });
+            this.logger.error('Failed to get app logs', { appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to get app logs: ' + error.message,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
         }
     }
 
     async handleConsoleSubscribe(clientId, message) {
-        const { executionId } = message;
+        const { appId } = message;
 
-        this.logger.info('Subscribing to console output', { clientId, executionId });
+        this.logger.info('Subscribing to console output', { clientId, appId });
 
         try {
-            await this.runtime.consoleManager.subscribe(clientId, executionId);
+            await this.runtime.consoleManager.subscribe(clientId, appId);
 
             return {
                 type: 'console_subscribed',
                 id: message.id,
                 clientId,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to subscribe to console', { clientId, executionId, error: error.message });
+            this.logger.error('Failed to subscribe to console', { clientId, appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to subscribe to console: ' + error.message,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
         }
     }
 
     async handleConsoleUnsubscribe(clientId, message) {
-        const { executionId } = message;
+        const { appId } = message;
 
-        this.logger.info('Unsubscribing from console output', { clientId, executionId });
+        this.logger.info('Unsubscribing from console output', { clientId, appId });
 
         try {
-            await this.runtime.consoleManager.unsubscribe(clientId, executionId);
+            await this.runtime.consoleManager.unsubscribe(clientId, appId);
 
             return {
                 type: 'console_unsubscribed',
                 id: message.id,
                 clientId,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to unsubscribe from console', { clientId, executionId, error: error.message });
+            this.logger.error('Failed to unsubscribe from console', { clientId, appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to unsubscribe from console: ' + error.message,
-                executionId,
+                appId,
                 timestamp: new Date().toISOString()
             };
         }
@@ -724,12 +696,11 @@ export class MessageHandler {
     }
 
     async handleDeployRequest(message) {
-        const { code, prototype, username, disable_code_convert = false, vehicleId } = message;
-        
-        this.logger.info('Processing deploy request', { 
-            appId: prototype?.id || 'unknown', 
+        const { code, prototype, vehicleId } = message;
+
+        this.logger.info('Processing deploy request', {
+            appId: prototype?.id || 'unknown',
             appName: prototype?.name,
-            disable_code_convert,
             vehicleId
         });
 
@@ -738,18 +709,17 @@ export class MessageHandler {
             // Frontend handles the code conversion
             const executionId = uuidv4();
             const appId = prototype?.id || `deploy_${Date.now()}`;
-            
+
             // Determine app type and run accordingly
             let result;
             if (prototype?.language === 'python' || code.includes('import ') || code.includes('def ')) {
                 result = await this.runtime.appManager.runPythonApp({
                     executionId,
                     appId,
-                    code: disable_code_convert ? code : this._convertPythonCode(code),
+                    code: code,
                     entryPoint: 'main.py',
                     env: {
-                        APP_NAME: prototype?.name || 'Deployed App',
-                        USER_NAME: username || 'anonymous'
+                        APP_NAME: prototype?.name || 'Deployed App'
                     },
                     workingDir: '/app',
                     vehicleId
@@ -762,8 +732,7 @@ export class MessageHandler {
                     binaryPath: code, // Assume code contains binary path or URL
                     args: [],
                     env: {
-                        APP_NAME: prototype?.name || 'Deployed App',
-                        USER_NAME: username || 'anonymous'
+                        APP_NAME: prototype?.name || 'Deployed App'
                     },
                     workingDir: '/app',
                     vehicleId
@@ -1275,96 +1244,61 @@ export class MessageHandler {
         }
     }
 
-    // Update existing handlers to use appId instead of executionId for enhanced lifecycle
     async handleStopApp(message) {
-        const { appId, executionId } = message;
+        const { appId } = message;
 
-        this.logger.info('Stopping application', { appId, executionId });
+        this.logger.info('Stopping application', { appId });
 
         try {
-            // For backward compatibility, try appId first, then executionId
-            let result;
-            if (appId) {
-                result = await this.runtime.appManager.stopApplication(appId);
-            } else if (executionId) {
-                // Legacy support - find app by executionId
-                const app = await this.runtime.appManager.getApplicationByExecutionId(executionId);
-                result = await this.runtime.appManager.stopApplication(app.appId);
-            } else {
-                throw new Error('Either appId or executionId is required');
-            }
-
-            this.logger.debug('Stop app result', {
-                result,
-                fallbackExitCode: result.exitCode || 0,
-                finalExitCode: result.exitCode || 0
-            });
+            const result = await this.runtime.appManager.stopApplication(appId);
 
             return {
                 type: 'app_stopped',
                 id: message.id,
-                appId: appId || result.appId,
-                executionId: executionId || result.executionId,
+                appId,
                 status: result.status,
-                exitCode: result.exitCode || 0, // Default to 0 if exitCode is undefined
+                exitCode: result.exitCode || 0,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to stop app', { appId, executionId, error: error.message });
+            this.logger.error('Failed to stop app', { appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to stop app: ' + error.message,
                 appId,
-                executionId,
                 timestamp: new Date().toISOString()
             };
         }
     }
 
     async handleGetAppStatus(message) {
-        const { appId, executionId } = message;
+        const { appId } = message;
 
-        this.logger.info('Getting application status', { appId, executionId });
+        this.logger.info('Getting application status', { appId });
 
         try {
-            // For backward compatibility, try appId first, then executionId
-            let status;
-            if (appId) {
-                status = await this.runtime.appManager.getApplicationStatus(appId);
-            } else if (executionId) {
-                // Legacy support - find app by executionId
-                const app = await this.runtime.appManager.getApplicationByExecutionId(executionId);
-                status = await this.runtime.appManager.getApplicationStatus(app.appId);
-            } else {
-                throw new Error('Either appId or executionId is required');
-            }
+            const status = await this.runtime.appManager.getApplicationStatus(appId);
 
             return {
                 type: 'app_status',
                 id: message.id,
+                appId,
                 status,
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
-            this.logger.error('Failed to get app status', { appId, executionId, error: error.message });
+            this.logger.error('Failed to get app status', { appId, error: error.message });
             return {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to get app status: ' + error.message,
                 appId,
-                executionId,
                 timestamp: new Date().toISOString()
             };
         }
     }
 
-    // Helper method for code conversion
-    _convertPythonCode(code) {
-        // Simple code conversion - in real implementation this would use the converter
-        // For now, just return as-is since frontend handles conversion
-        return code;
-    }
-}
+  }
