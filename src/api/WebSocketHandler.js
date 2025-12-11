@@ -86,11 +86,26 @@ export class WebSocketHandler {
                 data: data.toString().substring(0, 200)
             });
 
-            this._sendToClient(clientId, {
+            // Try to extract message ID from the original data for correlation
+            let messageId = null;
+            try {
+                const parsedData = JSON.parse(data.toString());
+                messageId = parsedData.id;
+            } catch (parseError) {
+                // Ignore parse errors, just continue without ID
+            }
+
+            const errorResponse = {
                 type: 'error',
                 error: 'Invalid message format',
                 timestamp: new Date().toISOString()
-            });
+            };
+
+            if (messageId) {
+                errorResponse.id = messageId;
+            }
+
+            this._sendToClient(clientId, errorResponse);
         }
     }
 

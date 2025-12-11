@@ -88,9 +88,9 @@ export class MessageHandler {
                 this.logger.warn('Unknown message type', { type: message.type });
                 return {
                     type: 'error',
-                id: message.id,
-                error: `Unknown message type: ${message.type}`,
-                timestamp: new Date().toISOString()
+                    id: message.id,
+                    error: `Unknown message type: ${message.type}`,
+                    timestamp: new Date().toISOString()
                 };
         }
     }

@@ -422,7 +422,7 @@ export class KuksaManager extends EventEmitter {
                 });
 
                 // Load protobuf definition
-                const protoPath = path.join(process.cwd(), 'proto', 'kuksa.proto');
+                const protoPath = this.options.protoPath || path.join(process.cwd(), 'proto', 'kuksa.proto');
                 let packageDefinition;
 
                 try {
@@ -575,11 +575,8 @@ export class KuksaManager extends EventEmitter {
             });
         }, 30000); // Check every 30 seconds
 
-        // Clean up on disconnect
-        this.grpcClient.on('error', (error) => {
-            this.logger.error('Kuksa gRPC client error', { error: error.message });
-            this._handleConnectionFailure(error);
-        });
+        // Note: gRPC client error handling is done through method callbacks and channel events
+        // The gRPC VSS client doesn't have EventEmitter-style error events
     }
 
     _scheduleConnectionRetry() {
