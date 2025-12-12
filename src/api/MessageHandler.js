@@ -611,12 +611,6 @@ export class MessageHandler {
             // For simplified runtime, deploy_request just runs the app directly
             // Frontend handles the code conversion
 
-            let result = {
-                status: 'started',
-                executionId,
-                appId
-            };
-
             // First install the application in database
             const appData = {
                 id: appId,
