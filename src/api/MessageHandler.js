@@ -595,7 +595,7 @@ export class MessageHandler {
     }
 
     async handleDeployRequest(message) {
-        const { code, prototype, vehicleId } = message;
+        const { code, prototype, vehicleId, language } = message;
 
         this.logger.info('Processing deploy request', {
             appId: prototype?.id || 'unknown',
@@ -605,7 +605,7 @@ export class MessageHandler {
 
         // Define these outside try block so they're available in catch block
         const executionId = uuidv4();
-        const appId = prototype?.id || `deploy_${Date.now()}`;
+        const appId = prototype?.id || `deploy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         try {
             // For simplified runtime, deploy_request just runs the app directly
@@ -650,7 +650,7 @@ export class MessageHandler {
 
             // Determine app type and run accordingly
             let result;
-            if (prototype?.language === 'python' || code.includes('import ') || code.includes('def ')) {
+            if (prototype?.language === 'python' || language === 'python' || code.includes('import ') || code.includes('def ')) {
                 result = await this.runtime.appManager.runPythonApp({
                     executionId,
                     appId,
