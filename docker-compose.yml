@@ -12,7 +12,7 @@ services:
   vehicle-edge-runtime:
     build:
       context: .
-      dockerfile: Dockerfile.new
+      dockerfile: Dockerfile
     container_name: vehicle-edge-runtime
     ports:
       - "3002:3002"  # WebSocket API
