@@ -603,11 +603,19 @@ export class MessageHandler {
             vehicleId
         });
 
+        // Define these outside try block so they're available in catch block
+        const executionId = uuidv4();
+        const appId = prototype?.id || `deploy_${Date.now()}`;
+
         try {
             // For simplified runtime, deploy_request just runs the app directly
             // Frontend handles the code conversion
-            const executionId = uuidv4();
-            const appId = prototype?.id || `deploy_${Date.now()}`;
+
+            let result = {
+                status: 'started',
+                executionId,
+                appId
+            };
 
             // First install the application in database
             const appData = {
@@ -675,6 +683,9 @@ export class MessageHandler {
                 type: 'deploy_request-response',
                 id: message.id,
                 cmd: 'deploy_request',
+                executionId,
+                appId,
+                status: 'failed',
                 error: 'Failed to deploy application: ' + error.message,
                 isDone: true,
                 code: 1,
@@ -688,9 +699,12 @@ export class MessageHandler {
 
         try {
             const runningApps = await this.runtime.appManager.getRunningApplications();
-            
+
+            // Ensure we always have an array, even if no apps are running
+            const appsArray = Array.isArray(runningApps) ? runningApps : [];
+
             // Format for frontend compatibility
-            const apps = runningApps.map(app => ({
+            const apps = appsArray.map(app => ({
                 app_id: app.executionId,
                 name: app.appId,
                 version: '1.0.0',
@@ -716,8 +730,12 @@ export class MessageHandler {
         } catch (error) {
             this.logger.error('Failed to list deployed apps', { error: error.message });
             return {
-                type: 'error',
+                type: 'list_deployed_apps-response',
                 id: message.id,
+                applications: [], // Always return an array
+                apps: [],
+                total_count: 0,
+                running_count: 0,
                 error: 'Failed to list deployed apps: ' + error.message,
                 timestamp: new Date().toISOString()
             };
@@ -924,6 +942,27 @@ export class MessageHandler {
                 type: 'get_runtime_info-response',
                 id: message.id,
                 kit_id: this.runtime.runtimeId,
+                result: {
+                    runtimeId: this.runtime.runtimeId,
+                    capabilities: [
+                        'app_management',
+                        'vehicle_signals',
+                        'python_execution',
+                        'database_persistence',
+                        'console_streaming',
+                        'resource_monitoring'
+                    ],
+                    connectedServices: {
+                        kuksaManager: !!this.runtime.kuksaManager,
+                        database: !!this.runtime.dbManager,
+                        appManager: !!this.runtime.appManager
+                    },
+                    runningApplications: lsOfRunner,
+                    activeSubscriptions: lsOfApiSubscriber,
+                    status: 'running',
+                    startTime: this.runtime.startTime || new Date().toISOString(),
+                    version: '1.0.0'
+                },
                 data: {
                     lsOfRunner,
                     lsOfApiSubscriber

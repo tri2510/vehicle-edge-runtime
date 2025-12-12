@@ -253,7 +253,7 @@ export class EnhancedApplicationManager {
 
             // Update runtime state
             await this.db.updateRuntimeState(appId, {
-                execution_id: executionId: actualExecutionId,
+                execution_id: actualExecutionId,
                 container_id: container.id,
                 current_state: 'running'
             });
@@ -271,10 +271,10 @@ export class EnhancedApplicationManager {
                 startTime: new Date().toISOString(),
                 appDir: app.data_path
             };
-            this.applications.set(executionId: actualExecutionId, appInfo);
+            this.applications.set(actualExecutionId, appInfo);
 
             // Set up monitoring
-            await this._setupContainerMonitoring(executionId: actualExecutionId, container, appId);
+            await this._setupContainerMonitoring(actualExecutionId, container, appId);
 
             this.logger.info('Python application started', { executionId: actualExecutionId, appId, containerId: container.id });
 
@@ -353,7 +353,7 @@ export class EnhancedApplicationManager {
 
             // Update runtime state
             await this.db.updateRuntimeState(appId, {
-                execution_id: executionId: actualExecutionId,
+                execution_id: actualExecutionId,
                 container_id: container.id,
                 current_state: 'running'
             });
@@ -371,10 +371,10 @@ export class EnhancedApplicationManager {
                 startTime: new Date().toISOString(),
                 appDir: app.data_path
             };
-            this.applications.set(executionId: actualExecutionId, appInfo);
+            this.applications.set(actualExecutionId, appInfo);
 
             // Set up monitoring
-            await this._setupContainerMonitoring(executionId: actualExecutionId, container, appId);
+            await this._setupContainerMonitoring(actualExecutionId, container, appId);
 
             this.logger.info('Binary application started', { executionId: actualExecutionId, appId, containerId: container.id });
 
@@ -746,7 +746,8 @@ export class EnhancedApplicationManager {
     }
 
     async _createPythonContainer(options) {
-        const { executionId: actualExecutionId, appId, appDir, entryPoint, env, workingDir } = options;
+        const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
+const actualExecutionId = executionId || uuidv4();
 
         if (!appDir) {
             throw new Error('Application directory path is required for container creation');
@@ -766,7 +767,7 @@ export class EnhancedApplicationManager {
                 'PYTHONUNBUFFERED=1',
                 'PYTHONPATH=/app/dependencies:/app',
                 'APP_ID=' + appId,
-                'EXECUTION_ID=' + executionId: actualExecutionId,
+                'EXECUTION_ID=' + actualExecutionId,
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
@@ -795,7 +796,8 @@ export class EnhancedApplicationManager {
     }
 
     async _createNativePythonProcess(options) {
-        const { executionId: actualExecutionId, appId, appDir, entryPoint, env, workingDir } = options;
+        const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
+const actualExecutionId = executionId || uuidv4();
         const { spawn } = await import('child_process');
 
         // Set up environment variables
@@ -804,7 +806,7 @@ export class EnhancedApplicationManager {
             PYTHONUNBUFFERED: '1',
             PYTHONPATH: `${path.join(this.appStorage, 'dependencies', appId)}:${workingDir}`,
             APP_ID: appId,
-            EXECUTION_ID: executionId: actualExecutionId,
+            EXECUTION_ID: actualExecutionId,
             ...env
         };
 
@@ -824,22 +826,22 @@ export class EnhancedApplicationManager {
                 // Handle process output
                 pythonProcess.stdout.on('data', (data) => {
                     const output = data.toString();
-                    this._handleProcessOutput(executionId: actualExecutionId, 'stdout', output);
+                    this._handleProcessOutput(actualExecutionId, 'stdout', output);
                 });
 
                 pythonProcess.stderr.on('data', (data) => {
                     const output = data.toString();
-                    this._handleProcessOutput(executionId: actualExecutionId, 'stderr', output);
+                    this._handleProcessOutput(actualExecutionId, 'stderr', output);
                 });
 
                 pythonProcess.on('close', (code) => {
                     this.logger.info('Native Python process exited', { executionId: actualExecutionId, exitCode: code });
-                    this._handleProcessExit(executionId: actualExecutionId, code);
+                    this._handleProcessExit(actualExecutionId, code);
                 });
 
                 pythonProcess.on('error', (error) => {
                     this.logger.error('Native Python process error', { executionId: actualExecutionId, error: error.message });
-                    this._handleProcessError(executionId: actualExecutionId, error);
+                    this._handleProcessError(actualExecutionId, error);
                 });
 
                 return { id: mockContainer.id };
@@ -876,13 +878,13 @@ export class EnhancedApplicationManager {
 
         // Store the process for later access
         this.nativeProcesses = this.nativeProcesses || new Map();
-        this.nativeProcesses.set(executionId: actualExecutionId, pythonProcess);
+        this.nativeProcesses.set(actualExecutionId, pythonProcess);
 
         this.logger.debug('Native Python process created', { executionId: actualExecutionId, pid: pythonProcess.pid });
         return mockContainer;
     }
 
-    _handleProcessOutput(executionId: actualExecutionId, stream, data) {
+    _handleProcessOutput(actualExecutionId, stream, data) {
         // Emit output events for console streaming
         this.emit('processOutput', {
             executionId: actualExecutionId,
@@ -892,15 +894,15 @@ export class EnhancedApplicationManager {
         });
 
         // Add to application logs
-        this.db.addLog(executionId: actualExecutionId, stream === 'stderr' ? 'stderr' : 'stdout', data.trim());
+        this.db.addLog(actualExecutionId, stream === 'stderr' ? 'stderr' : 'stdout', data.trim());
     }
 
-    _handleProcessExit(executionId: actualExecutionId, exitCode) {
+    _handleProcessExit(actualExecutionId, exitCode) {
         // Update runtime state with exit code
         const app = this.runningApplications.get(executionId);
         if (app) {
             this.db.updateRuntimeState(app.appId, {
-                execution_id: executionId: actualExecutionId,
+                execution_id: actualExecutionId,
                 current_state: 'stopped',
                 exit_code: exitCode
             });
@@ -919,14 +921,14 @@ export class EnhancedApplicationManager {
         });
     }
 
-    _handleProcessError(executionId: actualExecutionId, error) {
+    _handleProcessError(actualExecutionId, error) {
         this.logger.error('Native Python process error', { executionId: actualExecutionId, error: error.message });
 
         // Update runtime state with error
         const app = this.runningApplications.get(executionId);
         if (app) {
             this.db.updateRuntimeState(app.appId, {
-                execution_id: executionId: actualExecutionId,
+                execution_id: actualExecutionId,
                 current_state: 'error'
             });
         }
@@ -958,7 +960,7 @@ export class EnhancedApplicationManager {
             Cmd: [binaryPath, ...args],
             Env: [
                 'APP_ID=' + appId,
-                'EXECUTION_ID=' + executionId: actualExecutionId,
+                'EXECUTION_ID=' + actualExecutionId,
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
@@ -983,7 +985,7 @@ export class EnhancedApplicationManager {
         return container;
     }
 
-    async _setupContainerMonitoring(executionId: actualExecutionId, container, appId) {
+    async _setupContainerMonitoring(actualExecutionId, container, appId) {
         this.logger.debug('Setting up container monitoring', { executionId: actualExecutionId, appId });
 
         try {
@@ -1004,13 +1006,13 @@ export class EnhancedApplicationManager {
             // Forward output to console manager and database
             stdoutStream.on('data', (chunk) => {
                 const output = chunk.toString();
-                this.runtime?.consoleManager?.addConsoleOutput(executionId: actualExecutionId, 'stdout', output);
+                this.runtime?.consoleManager?.addConsoleOutput(actualExecutionId, 'stdout', output);
                 this.db.addLog(appId, 'stdout', output, 'info', executionId);
             });
 
             stderrStream.on('data', (chunk) => {
                 const output = chunk.toString();
-                this.runtime?.consoleManager?.addConsoleOutput(executionId: actualExecutionId, 'stderr', output);
+                this.runtime?.consoleManager?.addConsoleOutput(actualExecutionId, 'stderr', output);
                 this.db.addLog(appId, 'stderr', output, 'error', executionId);
             });
 
@@ -1127,7 +1129,7 @@ export class EnhancedApplicationManager {
      */
     getRunningApplications() {
         const runningApps = [];
-        for (const [executionId: actualExecutionId, appInfo] of this.applications) {
+        for (const [actualExecutionId, appInfo] of this.applications) {
             if (appInfo.status === 'running' || appInfo.status === 'starting') {
                 runningApps.push({
                     executionId: actualExecutionId,
