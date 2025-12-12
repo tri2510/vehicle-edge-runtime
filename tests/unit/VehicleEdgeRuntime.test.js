@@ -1,4 +1,4 @@
-import { test, describe } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { WebSocket } from 'ws';
 import { VehicleEdgeRuntime } from '../../src/core/VehicleEdgeRuntime.js';
