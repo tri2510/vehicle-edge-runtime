@@ -247,6 +247,24 @@ export class EnhancedApplicationManager {
                 }
             }
 
+            // Create the application files in the app directory
+            try {
+                await fs.ensureDir(containerOptions.appDir);
+                await fs.writeFile(path.join(containerOptions.appDir, containerOptions.entryPoint), code);
+                this.logger.info('Created application file', {
+                    appId,
+                    appDir: containerOptions.appDir,
+                    entryPoint: containerOptions.entryPoint
+                });
+            } catch (fileError) {
+                this.logger.error('Failed to create application files', {
+                    appId,
+                    appDir: containerOptions.appDir,
+                    error: fileError.message
+                });
+                throw new Error(`Failed to create application files: ${fileError.message}`);
+            }
+
             // Create and start container
             const container = await this._createPythonContainer(containerOptions);
             await container.start();

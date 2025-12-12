@@ -449,7 +449,8 @@ if __name__ == "__main__":
 
         // Should have the deployed apps in the list
         const deployedAppIds = listResponse.applications.map(app => app.appId);
-        const foundApps = deployedApps.filter(appId => deployedAppIds.includes(appId));
+        const successfulAppIds = successfulDeployments.map(deployment => deployment.response.appId);
+        const foundApps = successfulAppIds.filter(appId => deployedAppIds.includes(appId));
         assert(foundApps.length >= successfulDeployments.length);
 
         // Step 3: Wait for execution
