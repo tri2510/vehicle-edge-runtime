@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import http from 'node:http';
 
 describe('End-to-End Vehicle Application Lifecycle Tests', () => {
     const WS_PORT = 3004;
@@ -182,7 +183,7 @@ if __name__ == "__main__":
     // Helper function to wait for service
     async function waitForService(port, timeoutMs = 30000) {
         const startTime = Date.now();
-        const http = require('http');
+        // http is already imported
 
         while (Date.now() - startTime < timeoutMs) {
             try {

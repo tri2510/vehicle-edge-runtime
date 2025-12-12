@@ -2,6 +2,7 @@ import { test, describe, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert';
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
+import http from 'node:http';
 
 describe('WebSocket API Integration Tests', () => {
     const WS_PORT = 3002;
@@ -14,7 +15,7 @@ describe('WebSocket API Integration Tests', () => {
     // Helper function to wait for service to be ready
     async function waitForService(port, path = '/', timeoutMs = 15000) {
         const startTime = Date.now();
-        const http = require('http');
+        // http is already imported
 
         while (Date.now() - startTime < timeoutMs) {
             try {
