@@ -611,22 +611,42 @@ export class MessageHandler {
             // For simplified runtime, deploy_request just runs the app directly
             // Frontend handles the code conversion
 
-            // First install the application in database
+            // First install the application in database with complete schema
             const appData = {
                 id: appId,
                 name: prototype?.name || `Deployed App ${appId}`,
                 description: prototype?.description || 'Deployed via API',
                 version: prototype?.version || '1.0.0',
-                language: 'python',
+                type: 'python',  // Use 'type' instead of 'language'
                 code: code,
                 status: 'installed',
                 created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                updated_at: new Date().toISOString(),
+                // Required database fields
+                entry_point: 'main.py',
+                binary_path: null,
+                args: JSON.stringify([]),
+                env: JSON.stringify({}),
+                working_dir: '/app',
+                python_deps: JSON.stringify([]),
+                vehicle_signals: JSON.stringify([]),
+                data_path: `/tmp/app-data-${appId}`,
+                config: JSON.stringify({})
             };
 
-            // Skip database insertion for integration tests to focus on core functionality
-            // The foreign key constraint requires proper database setup which is complex for testing
-            this.logger.info('Skipping database insertion for integration test', { appId });
+            // Insert application into database to satisfy foreign key constraints
+            if (this.runtime.appManager && this.runtime.appManager.db) {
+                try {
+                    await this.runtime.appManager.db.createApplication(appData);
+                    this.logger.info('Application inserted into database', { appId });
+                } catch (dbError) {
+                    this.logger.warn('Failed to create application in database', {
+                        appId,
+                        error: dbError.message
+                    });
+                    // Continue with deployment even if database fails
+                }
+            }
 
             // Determine app type and run accordingly
             let result;
