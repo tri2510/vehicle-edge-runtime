@@ -12,38 +12,50 @@ services:
   vehicle-edge-runtime:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.new
+    container_name: vehicle-edge-runtime
     ports:
-      - "3002:3002"
-      - "3003:3003"
+      - "3002:3002"  # WebSocket API
+      - "3003:3003"  # Health Check
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - NODE_ENV=production
-      - PORT=3002
-      - LOG_LEVEL=info
-      - KIT_MANAGER_URL=${KIT_MANAGER_URL:-ws://host.docker.internal:8080}
-      - KUKSA_URL=${KUKSA_URL:-kuksa-databroker:55555}
+      # Runtime Configuration
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${PORT:-3002}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Smart Default Connections
+      - KIT_MANAGER_URL=${KIT_MANAGER_URL:-wss://kit.digitalauto.tech}
+      - KUKSA_HOST=${KUKSA_HOST:-localhost}
+      - KUKSA_PORT=${KUKSA_PORT:-55555}
+
+      # Data and Resource Limits
       - DATA_PATH=/app/data
       - MAX_CONCURRENT_APPS=${MAX_CONCURRENT_APPS:-10}
       - DEFAULT_MEMORY_LIMIT=${DEFAULT_MEMORY_LIMIT:-524288000}
       - DEFAULT_CPU_LIMIT=${DEFAULT_CPU_LIMIT:-50000}
+
+      # Feature Toggles
+      - SKIP_KIT_MANAGER=${SKIP_KIT_MANAGER:-false}
+      - SKIP_KUKSA=${SKIP_KUKSA:-false}
     restart: unless-stopped
-    depends_on:
-      - redis
-      - kuksa-databroker
-    networks:
-      - vehicle-edge-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - vehicle-edge-network
 
+  # Optional: Local Kuksa Databroker (can be disabled)
   kuksa-databroker:
     image: eclipse/kuksa-databroker:0.4.4
+    container_name: kuksa-databroker
+    profiles:
+      - local-kuksa  # Only start with --profile local-kuksa
     ports:
       - "55555:55555"
     volumes:
@@ -71,29 +83,18 @@ services:
       retries: 3
       start_period: 40s
 
+  # Optional: Redis for caching
   redis:
     image: redis:7-alpine
+    container_name: vehicle-edge-redis
+    profiles:
+      - redis  # Only start with --profile redis
     volumes:
       - redis-data:/data
     restart: unless-stopped
     networks:
       - vehicle-edge-network
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-
-  # Optional: Nginx reverse proxy
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - vehicle-edge-runtime
-    networks:
-      - vehicle-edge-network
-    restart: unless-stopped
 
 volumes:
   redis-data:

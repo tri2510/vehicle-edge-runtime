@@ -6,48 +6,30 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Multi-stage build for Vehicle Edge Runtime
-FROM node:20-alpine AS build
+# Vehicle Edge Runtime - Production Dockerfile
+# Single optimized build for edge deployment
 
-# Install Docker CLI for container management
-RUN apk add --no-cache \
-    docker-cli \
-    docker-compose
-
-# Set the working directory
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
-
-# Copy source code
-COPY src/ ./src/
-
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S vehicle-edge -u 1001
-
-# Production stage
 FROM node:20-alpine
 
-# Install Docker CLI for container management
+# Install system dependencies
 RUN apk add --no-cache \
     docker-cli \
     curl \
     && rm -rf /var/cache/apk/*
 
-# Create user
+# Create non-root user with Docker group access
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S vehicle-edge -u 1001
+    addgroup -g 1337 docker && \
+    adduser -S vehicle-edge -u 1001 -G nodejs,docker
 
-# Set the working directory
+# Set working directory
 WORKDIR /app
 
-# Copy node modules from build stage
-COPY --from=build --chown=vehicle-edge:nodejs /app/node_modules ./node_modules
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies (production only)
+RUN npm ci --only=production && npm cache clean --force
 
 # Copy source code
 COPY --chown=vehicle-edge:nodejs src/ ./src/
@@ -59,7 +41,7 @@ RUN mkdir -p /app/data/applications /app/data/logs /app/data/configs && \
 # Switch to non-root user
 USER vehicle-edge
 
-# Expose WebSocket and Health check ports
+# Expose ports
 EXPOSE 3002 3003
 
 # Health check

@@ -9,6 +9,24 @@ logs/
 test-report.txt
 *.log
 coverage/
+test-reports/
+*.pid
+
+# Runtime temporary files
+workspace/
+kuksa-server.pid
+
+# Application deployment artifacts (keep structure, ignore content)
+data/applications/dependencies/deploy_*/
+data/logs/app-*.log
+
+# Database files (for clean builds)
+data/*.db
+data/*.db-*
+
+# Test data temporary files
+test-data/temp/
+test-data/*.tmp
 
 # Environment files
 .env
