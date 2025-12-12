@@ -175,7 +175,7 @@ export class EnhancedApplicationManager {
     }
 
     async runPythonApp(options) {
-        const { appId, env, workingDir, vehicleId, executionId } = options;
+        const { appId, env, workingDir, vehicleId, executionId, code } = options;
 
         this.logger.info('Starting Python application', { appId, vehicleId });
 
