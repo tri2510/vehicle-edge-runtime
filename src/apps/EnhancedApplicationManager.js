@@ -507,12 +507,50 @@ export class EnhancedApplicationManager {
 
     async getApplicationStatus(appId) {
         try {
-            const app = await this.db.getApplication(appId);
+            let app = null;
+
+            // Try database first
+            if (this.db) {
+                try {
+                    app = await this.db.getApplication(appId);
+                } catch (dbError) {
+                    this.logger.warn('Database lookup failed, checking memory cache', { appId, error: dbError.message });
+                }
+            }
+
+            // Fall back to memory cache if database lookup failed
+            if (!app) {
+                // Find the app in our memory cache
+                for (const [executionId, appInfo] of this.applications) {
+                    if (appInfo.appId === appId) {
+                        app = {
+                            id: appInfo.appId,
+                            name: `Running App ${appInfo.appId}`,
+                            type: appInfo.type,
+                            status: appInfo.status,
+                            created_at: appInfo.startTime,
+                            updated_at: appInfo.startTime,
+                            last_start: appInfo.startTime,
+                            total_runtime: 0,
+                            exit_code: appInfo.exitCode
+                        };
+                        break;
+                    }
+                }
+            }
+
             if (!app) {
                 throw new Error(`Application not found: ${appId}`);
             }
 
-            const runtimeState = await this.db.getRuntimeState(appId);
+            let runtimeState = null;
+            if (this.db) {
+                try {
+                    runtimeState = await this.db.getRuntimeState(appId);
+                } catch (dbError) {
+                    this.logger.warn('Runtime state lookup failed, using memory cache', { appId, error: dbError.message });
+                }
+            }
 
             // Calculate uptime if running
             let uptime = 0;

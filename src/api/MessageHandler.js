@@ -1227,21 +1227,28 @@ export class MessageHandler {
             const result = await this.runtime.appManager.stopApplication(appId);
 
             return {
-                type: 'app_stopped',
+                type: 'stop_app-response',
                 id: message.id,
-                appId,
-                status: result.status,
-                exitCode: result.exitCode || 0,
+                result: {
+                    appId,
+                    status: result.status,
+                    exitCode: result.exitCode || 0,
+                    timestamp: new Date().toISOString()
+                },
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
             this.logger.error('Failed to stop app', { appId, error: error.message });
             return {
-                type: 'error',
+                type: 'stop_app-response',
                 id: message.id,
-                error: 'Failed to stop app: ' + error.message,
-                appId,
+                result: {
+                    appId,
+                    status: 'error',
+                    error: 'Failed to stop app: ' + error.message,
+                    timestamp: new Date().toISOString()
+                },
                 timestamp: new Date().toISOString()
             };
         }
@@ -1256,20 +1263,27 @@ export class MessageHandler {
             const status = await this.runtime.appManager.getApplicationStatus(appId);
 
             return {
-                type: 'app_status',
+                type: 'get_app_status-response',
                 id: message.id,
-                appId,
-                status,
+                result: {
+                    appId,
+                    status,
+                    timestamp: new Date().toISOString()
+                },
                 timestamp: new Date().toISOString()
             };
 
         } catch (error) {
             this.logger.error('Failed to get app status', { appId, error: error.message });
             return {
-                type: 'error',
+                type: 'get_app_status-response',
                 id: message.id,
-                error: 'Failed to get app status: ' + error.message,
-                appId,
+                result: {
+                    appId,
+                    status: 'error',
+                    error: 'Failed to get app status: ' + error.message,
+                    timestamp: new Date().toISOString()
+                },
                 timestamp: new Date().toISOString()
             };
         }
