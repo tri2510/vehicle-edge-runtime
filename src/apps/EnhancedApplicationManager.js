@@ -538,19 +538,51 @@ export class EnhancedApplicationManager {
 
             // Fall back to memory cache if database lookup failed
             if (!app) {
-                // Find the app in our memory cache
+                // Find the app in our memory cache with enhanced error detection
                 for (const [executionId, appInfo] of this.applications) {
                     if (appInfo.appId === appId) {
+                        let currentStatus = appInfo.status;
+                        let exitCode = appInfo.exitCode;
+
+                        // For containers that just started, check if they're still running
+                        if (currentStatus === 'running' && appInfo.container) {
+                            try {
+                                // Check container status to detect quick failures (e.g., syntax errors)
+                                const containerInfo = await appInfo.container.inspect();
+                                if (containerInfo.State.Status === 'exited') {
+                                    // Container has exited, update status
+                                    exitCode = containerInfo.State.ExitCode;
+                                    currentStatus = exitCode !== 0 ? 'error' : 'stopped';
+                                    appInfo.status = currentStatus;
+                                    appInfo.exitCode = exitCode;
+                                    appInfo.endTime = new Date().toISOString();
+
+                                    this.logger.info('Container status updated via inspection', {
+                                        appId,
+                                        executionId,
+                                        status: currentStatus,
+                                        exitCode
+                                    });
+                                }
+                            } catch (inspectError) {
+                                this.logger.warn('Failed to inspect container status', {
+                                    appId,
+                                    executionId,
+                                    error: inspectError.message
+                                });
+                            }
+                        }
+
                         app = {
                             id: appInfo.appId,
                             name: `Running App ${appInfo.appId}`,
                             type: appInfo.type,
-                            status: appInfo.status,
+                            status: currentStatus,
                             created_at: appInfo.startTime,
                             updated_at: appInfo.startTime,
                             last_start: appInfo.startTime,
                             total_runtime: 0,
-                            exit_code: appInfo.exitCode
+                            exit_code: exitCode
                         };
                         break;
                     }
@@ -1082,27 +1114,51 @@ const actualExecutionId = executionId || uuidv4();
                 }
             });
 
-            // Monitor container exit
+            // Monitor container exit with immediate error detection
             container.wait().then(async (data) => {
                 this.logger.info('Container exited', { executionId: actualExecutionId, appId, exitCode: data.StatusCode });
 
-                // Update database
-                await this.db.updateApplication(appId, { status: 'stopped' });
-                await this.db.updateRuntimeState(appId, {
-                    current_state: 'stopped',
-                    exit_code: data.StatusCode
-                });
-                if (this.db && this.db.addLog) {
-                    await this.db.addLog(appId, 'status', `Container exited with code: ${data.StatusCode}`, 'info', actualExecutionId);
+                // Determine final status based on exit code
+                let finalStatus = 'stopped';
+                if (data.StatusCode !== 0) {
+                    finalStatus = 'error';
                 }
 
-                // Update runtime cache
+                // Update database immediately
+                try {
+                    if (this.db && this.db.updateApplication) {
+                        await this.db.updateApplication(appId, { status: finalStatus });
+                    }
+                    if (this.db && this.db.updateRuntimeState) {
+                        await this.db.updateRuntimeState(appId, {
+                            current_state: 'stopped',
+                            exit_code: data.StatusCode
+                        });
+                    }
+                    if (this.db && this.db.addLog) {
+                        const logMessage = data.StatusCode !== 0
+                            ? `Application failed with exit code: ${data.StatusCode}`
+                            : `Application stopped successfully with code: ${data.StatusCode}`;
+                        await this.db.addLog(appId, 'status', logMessage, data.StatusCode !== 0 ? 'error' : 'info', actualExecutionId);
+                    }
+                } catch (dbError) {
+                    this.logger.warn('Failed to update database after container exit', { appId, error: dbError.message });
+                }
+
+                // Update runtime cache immediately
                 const appInfo = this.applications.get(actualExecutionId);
                 if (appInfo) {
-                    appInfo.status = 'exited';
+                    appInfo.status = finalStatus;
                     appInfo.exitCode = data.StatusCode;
                     appInfo.endTime = new Date().toISOString();
                 }
+
+                this.logger.info('Application status updated', {
+                    executionId: actualExecutionId,
+                    appId,
+                    status: finalStatus,
+                    exitCode: data.StatusCode
+                });
 
             }).catch((error) => {
                 this.logger.error('Error waiting for container', { executionId: actualExecutionId, appId, error: error.message });
@@ -1568,20 +1624,50 @@ const actualExecutionId = executionId || uuidv4();
     }
 
     /**
-     * Get list of running applications
+     * Get list of running applications with real-time container status checking
      * @returns {Array} Array of running application info
      */
-    getRunningApplications() {
+    async getRunningApplications() {
         const runningApps = [];
         for (const [actualExecutionId, appInfo] of this.applications) {
-            if (appInfo.status === 'running' || appInfo.status === 'starting') {
-                runningApps.push({
+            try {
+                // For containers that might have exited, check real-time status
+                let currentStatus = appInfo.status;
+
+                if (currentStatus === 'running' && appInfo.container) {
+                    try {
+                        // Check container status to detect if it has exited
+                        const containerInfo = await appInfo.container.inspect();
+                        if (containerInfo.State.Status === 'exited') {
+                            const exitCode = containerInfo.State.ExitCode;
+                            currentStatus = exitCode !== 0 ? 'error' : 'stopped';
+                            appInfo.status = currentStatus;
+                            appInfo.exitCode = exitCode;
+                            appInfo.endTime = new Date().toISOString();
+                        }
+                    } catch (inspectError) {
+                        this.logger.warn('Failed to inspect container during getRunningApplications', {
+                            executionId: actualExecutionId,
+                            error: inspectError.message
+                        });
+                    }
+                }
+
+                // Only include apps that are truly running or starting
+                if (currentStatus === 'running' || currentStatus === 'starting') {
+                    runningApps.push({
+                        executionId: actualExecutionId,
+                        appId: appInfo.appId,
+                        name: appInfo.name,
+                        type: appInfo.type,
+                        status: currentStatus,
+                        startTime: appInfo.startTime
+                    });
+                }
+            } catch (error) {
+                this.logger.warn('Failed to get status for application during getRunningApplications', {
                     executionId: actualExecutionId,
-                    appId: appInfo.appId,
-                    name: appInfo.name,
-                    type: appInfo.type,
-                    status: appInfo.status,
-                    startTime: appInfo.startTime
+                    error: error.message
                 });
             }
         }

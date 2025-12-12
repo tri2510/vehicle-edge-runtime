@@ -114,8 +114,8 @@ describe('VehicleEdgeRuntime Core Tests', () => {
         assert(connectionCount >= 0);
     });
 
-    test('should track application deployments', () => {
-        const deploymentCount = runtime.getActiveDeploymentCount();
+    test('should track application deployments', async () => {
+        const deploymentCount = await runtime.getActiveDeploymentCount();
         assert(typeof deploymentCount === 'number');
         assert(deploymentCount >= 0);
     });

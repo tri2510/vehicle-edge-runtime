@@ -332,9 +332,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
      * Get active deployment count (for tests)
      * @returns {number} Number of active deployments
      */
-    getActiveDeploymentCount() {
+    async getActiveDeploymentCount() {
         if (this.appManager && this.appManager.getRunningApplications) {
-            return this.appManager.getRunningApplications().length;
+            const runningApps = await this.appManager.getRunningApplications();
+            return runningApps.length;
         }
         return 0;
     }

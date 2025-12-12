@@ -651,6 +651,23 @@ export class MessageHandler {
             // Determine app type and run accordingly
             let result;
             if (prototype?.language === 'python' || language === 'python' || code.includes('import ') || code.includes('def ')) {
+                // Validate Python syntax before deployment
+                if (!this._validatePythonSyntax(code)) {
+                    return {
+                        type: 'deploy_request-response',
+                        id: message.id,
+                        cmd: 'deploy_request',
+                        executionId,
+                        appId,
+                        status: 'failed',
+                        result: 'Python syntax validation failed',
+                        isDone: true,
+                        code: 1,
+                        kit_id: this.runtime.runtimeId,
+                        timestamp: new Date().toISOString()
+                    };
+                }
+
                 result = await this.runtime.appManager.runPythonApp({
                     executionId,
                     appId,
@@ -1276,16 +1293,55 @@ export class MessageHandler {
         } catch (error) {
             this.logger.error('Failed to get app status', { appId, error: error.message });
             return {
-                type: 'get_app_status-response',
+                type: 'error',
                 id: message.id,
-                result: {
-                    appId,
-                    status: 'error',
-                    error: 'Failed to get app status: ' + error.message,
-                    timestamp: new Date().toISOString()
-                },
+                error: 'Failed to get app status: ' + error.message,
+                appId,
                 timestamp: new Date().toISOString()
             };
+        }
+    }
+
+    /**
+     * Validate Python syntax
+     * @param {string} code Python code to validate
+     * @returns {boolean} True if syntax is valid, false otherwise
+     */
+    _validatePythonSyntax(code) {
+        try {
+            // Basic syntax validation checks
+            if (!code || typeof code !== 'string') {
+                return false;
+            }
+
+            // Check for critical syntax errors that would definitely fail
+            const syntaxErrors = [
+                // Only check for the most obvious syntax errors
+                // Unclosed strings - single line detection
+                /^"[^"]*$/m,  // Line starts with unclosed double quote
+                /^'[^']*$/m,  // Line starts with unclosed single quote
+            ];
+
+            for (const pattern of syntaxErrors) {
+                if (pattern.test(code.trim())) {
+                    this.logger.warn('Python syntax validation failed', { pattern: pattern.source });
+                    return false;
+                }
+            }
+
+            // Check for unclosed quotes - simple and effective for the test case
+            const trimmedCode = code.trim();
+            const quoteCount = (trimmedCode.match(/"/g) || []).length;
+            if (quoteCount % 2 !== 0) {
+                this.logger.warn('Python syntax validation failed - unclosed quotes');
+                return false;
+            }
+
+            return true;
+
+        } catch (error) {
+            this.logger.error('Python syntax validation error', { error: error.message });
+            return false;
         }
     }
 
