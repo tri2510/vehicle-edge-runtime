@@ -23,7 +23,13 @@ describe('EnhancedApplicationManager Tests', () => {
             }
         };
 
-        appManager = new EnhancedApplicationManager(mockRuntime);
+        // EnhancedApplicationManager expects options, not runtime
+        const options = {
+            dataPath: './test-data',
+            logLevel: 'error'
+        };
+        appManager = new EnhancedApplicationManager(options);
+        appManager.setRuntime(mockRuntime);
     });
 
     test('should initialize with empty application registry', () => {
