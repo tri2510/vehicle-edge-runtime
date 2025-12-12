@@ -14,9 +14,21 @@ export class KuksaManager extends EventEmitter {
     constructor(options = {}) {
         super();
 
+        // Parse kuksaUrl if provided, otherwise use separate host/port
+        let kuksaHost = options.kuksaHost || 'localhost';
+        let kuksaPort = options.kuksaPort || 50051;
+
+        if (options.kuksaUrl) {
+            const urlParts = options.kuksaUrl.split(':');
+            if (urlParts.length >= 2) {
+                kuksaHost = urlParts[0];
+                kuksaPort = parseInt(urlParts[1]) || 50051;
+            }
+        }
+
         this.options = {
-            kuksaHost: options.kuksaHost || 'localhost',
-            kuksaPort: options.kuksaPort || 50051,
+            kuksaHost,
+            kuksaPort,
             authEnabled: options.authEnabled || false,
             authToken: options.authToken || null,
             vssPath: options.vssPath || './data/configs/vss.json',
@@ -453,7 +465,7 @@ export class KuksaManager extends EventEmitter {
                 const kuksaService = protoDescriptor.kuksa.val.v1;
 
                 // Create gRPC client
-                this.grpcClient = new kuksaService.VSS(
+                this.grpcClient = new kuksaService.Val(
                     kuksaAddress,
                     grpc.credentials.createInsecure(),
                     {
