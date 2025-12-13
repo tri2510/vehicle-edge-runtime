@@ -103,7 +103,12 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Connect to Kit Manager (if not skipped)
             if (!this.options.skipKitManager) {
-                await this._connectToKitManager();
+                try {
+                    await this._connectToKitManager();
+                } catch (error) {
+                    this.logger.warn('Kit Manager connection failed, continuing without it', { error: error.message });
+                    // Don't fail startup for external Kit Manager connection issues
+                }
             } else {
                 this.logger.info('Skipping Kit Manager connection (test mode)');
             }
@@ -164,7 +169,13 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Disconnect from Kit Manager
             if (this.kitManagerConnection) {
-                this.kitManagerConnection.close();
+                if (this.kitManagerConnection.disconnect) {
+                    // Socket.IO connection
+                    this.kitManagerConnection.disconnect();
+                } else if (this.kitManagerConnection.close) {
+                    // WebSocket connection
+                    this.kitManagerConnection.close();
+                }
             }
 
             // Stop Kuksa Manager
@@ -209,7 +220,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             runtimeId: this.runtimeId,
             isRunning: this.isRunning,
             port: this.options.port,
-            kitManagerConnected: this.kitManagerConnection?.readyState === WebSocket.OPEN,
+            kitManagerConnected: this._isKitManagerConnected(),
             kuksaConnected: this.kuksaManager?.getStatus().isConnected || false,
             connectedClients: this.clients.size,
             registeredKits: this.registeredKits.size,
@@ -391,15 +402,38 @@ export class VehicleEdgeRuntime extends EventEmitter {
         return new Promise((resolve, reject) => {
             this.logger.info('Connecting to Kit Manager...', { url: this.options.kitManagerUrl });
 
-            // Convert ws:// URL to http:// for Socket.IO client
-            const httpUrl = this.options.kitManagerUrl.replace('ws://', 'http://');
+            // Convert URL to Socket.IO compatible format
+            let httpUrl;
+            if (this.options.kitManagerUrl.startsWith('ws://')) {
+                // Convert WebSocket URL to HTTP for Socket.IO
+                httpUrl = this.options.kitManagerUrl.replace('ws://', 'http://');
+            } else if (this.options.kitManagerUrl.startsWith('https://')) {
+                // Keep HTTPS URLs as-is for Socket.IO
+                httpUrl = this.options.kitManagerUrl;
+            } else if (this.options.kitManagerUrl.startsWith('http://')) {
+                // Keep HTTP URLs as-is for Socket.IO
+                httpUrl = this.options.kitManagerUrl;
+            } else {
+                // Default to WebSocket format
+                httpUrl = this.options.kitManagerUrl.replace(/^/, 'http://');
+            }
 
-            this.kitManagerConnection = io(httpUrl, {
-                transports: ['websocket'],
+            // Configure Socket.IO options based on protocol
+            const socketOptions = {
                 reconnection: true,
                 reconnectionDelay: 5000,
-                reconnectionAttempts: Infinity
-            });
+                reconnectionAttempts: Infinity,
+                timeout: 20000 // Connection timeout
+            };
+
+            // Use websocket transport for non-HTTPS, allow any for HTTPS
+            if (httpUrl.startsWith('https://')) {
+                socketOptions.transports = ['websocket', 'polling'];
+            } else {
+                socketOptions.transports = ['websocket'];
+            }
+
+            this.kitManagerConnection = io(httpUrl, socketOptions);
 
             this.kitManagerConnection.on('connect', () => {
                 this.logger.info('Connected to Kit Manager');
@@ -443,6 +477,20 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
         this.kitManagerConnection.emit('register_kit', registrationMessage);
         this.logger.info('Runtime registration sent to Kit Manager');
+    }
+
+    _isKitManagerConnected() {
+        if (!this.kitManagerConnection) {
+            return false;
+        }
+        
+        // For Socket.IO connections, check the connected property
+        if (this.kitManagerConnection.connected !== undefined) {
+            return this.kitManagerConnection.connected;
+        }
+        
+        // For WebSocket connections, check readyState
+        return this.kitManagerConnection.readyState === WebSocket.OPEN;
     }
 
     _handleKitManagerMessage(data) {

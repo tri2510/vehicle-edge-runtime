@@ -56,7 +56,7 @@ services:
       - NODE_ENV=test
       - PORT=3002
       - LOG_LEVEL=info
-      - KIT_MANAGER_URL=ws://localhost:3090
+      - KIT_MANAGER_URL=ws://kit.digitalauto.tech
       - SKIP_KUKSA=true
     restart: "no"  # Don't restart automatically in tests
     healthcheck:
@@ -338,7 +338,7 @@ services:
 
         if (envExists) {
             const envContent = await fs.readFile(envPath, 'utf8');
-            assert.ok(envContent.includes('KIT_MANAGER_URL=ws://localhost:3090'),
+            assert.ok(envContent.includes('KIT_MANAGER_URL=ws://kit.digitalauto.tech'),
                 'Should include Kit Manager URL');
         }
 
