@@ -25,7 +25,7 @@ describe('Docker WebSocket API Integration Tests', () => {
     beforeEach(async () => {
         // Start container with online Kit-Manager
         containerId = await startContainer([
-            '-e', 'KIT_MANAGER_URL=wss://kit.digitalauto.tech',
+            '-e', 'KIT_MANAGER_URL=ws://localhost:3090',
             '-e', 'SKIP_KUKSA=true'  // Skip Kuksa for API tests
         ]);
         await waitForHealthCheck();

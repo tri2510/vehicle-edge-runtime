@@ -287,6 +287,7 @@ if __name__ == "__main__":
                 ...process.env,
                 PORT: WS_PORT.toString(),
                 HEALTH_PORT: HEALTH_PORT.toString(),
+                KIT_MANAGER_URL: 'ws://localhost:3090',
                 KUKSA_ENABLED: 'true', // MANDATORY Kuksa integration
                 KUKSA_HOST: 'localhost',
                 KUKSA_GRPC_PORT: '55555',

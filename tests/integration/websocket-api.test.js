@@ -99,6 +99,7 @@ describe('WebSocket API Integration Tests', () => {
                 ...process.env,
                 PORT: WS_PORT.toString(),
                 HEALTH_PORT: HEALTH_PORT.toString(),
+                KIT_MANAGER_URL: 'ws://localhost:3090',
                 KUKSA_ENABLED: 'true', // MANDATORY Kuksa integration - tests will fail without Kuksa
                 KUKSA_HOST: 'localhost',
                 KUKSA_GRPC_PORT: '55555',
