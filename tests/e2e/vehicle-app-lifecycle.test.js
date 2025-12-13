@@ -258,11 +258,27 @@ if __name__ == "__main__":
     before(async () => {
         console.log('🚀 Starting Vehicle Edge Runtime for E2E tests...');
 
-        // Ensure test data directory exists
-        const testDataDir = './test-data-e2e';
-        if (!fs.existsSync(testDataDir)) {
-            fs.mkdirSync(testDataDir, { recursive: true });
+        // Ensure test data directory exists with proper permissions
+        const testDataDir = path.join(process.cwd(), 'test-data-e2e');
+        
+        // Clean up any existing test data directory to ensure fresh state
+        if (fs.existsSync(testDataDir)) {
+            try {
+                fs.rmSync(testDataDir, { recursive: true, force: true });
+            } catch (error) {
+                console.warn('Warning: Could not clean up existing test data directory:', error.message);
+            }
         }
+        
+        // Create fresh test data directory with full permissions
+        fs.mkdirSync(testDataDir, { recursive: true, mode: 0o755 });
+        
+        // Create subdirectories that the runtime expects
+        const subdirs = ['applications', 'logs', 'configs'];
+        subdirs.forEach(subdir => {
+            const subdirPath = path.join(testDataDir, subdir);
+            fs.mkdirSync(subdirPath, { recursive: true, mode: 0o755 });
+        });
 
         runtimeProcess = spawn('node', ['src/index.js'], {
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -274,7 +290,8 @@ if __name__ == "__main__":
                 KUKSA_ENABLED: 'true', // MANDATORY Kuksa integration
                 KUKSA_HOST: 'localhost',
                 KUKSA_GRPC_PORT: '55555',
-                DATA_DIR: testDataDir
+                DATA_DIR: testDataDir,
+                NODE_ENV: 'test'  // Signal to runtime that we're in test mode
             }
         });
 

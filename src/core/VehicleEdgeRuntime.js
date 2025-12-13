@@ -17,6 +17,8 @@ import { KuksaManager } from '../vehicle/KuksaManager.js';
 import { CredentialManager } from '../vehicle/CredentialManager.js';
 import { Logger } from '../utils/Logger.js';
 import { HealthCheck } from '../utils/HealthCheck.js';
+import { DatabaseManager } from '../database/DatabaseManager.js';
+import path from 'path';
 
 export class VehicleEdgeRuntime extends EventEmitter {
     constructor(options = {}) {
@@ -65,6 +67,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
             logLevel: this.options.logLevel
         });
         this.wsHandler = new WebSocketHandler(this);
+
+        // Database manager
+        this.dbPath = path.join(this.options.dataPath, 'vehicle-edge.db');
+        this.dbManager = new DatabaseManager(this.dbPath, { logLevel: this.options.logLevel });
 
         // Health check
         this.healthCheck = new HealthCheck(parseInt(this.options.port) + 1, this);
@@ -173,6 +179,11 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Stop all running applications
             await this.appManager.stopAllApplications();
+
+            // Close database connection
+            if (this.dbManager) {
+                await this.dbManager.close();
+            }
 
             // Close all client connections
             for (const [clientId, client] of this.clients) {
@@ -348,6 +359,9 @@ export class VehicleEdgeRuntime extends EventEmitter {
         await fs.ensureDir(`${this.options.dataPath}/applications`);
         await fs.ensureDir(`${this.options.dataPath}/logs`);
         await fs.ensureDir(`${this.options.dataPath}/configs`);
+        
+        // Initialize database
+        await this.dbManager.initialize();
     }
 
     async _startWebSocketServer() {

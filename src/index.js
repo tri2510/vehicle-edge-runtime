@@ -52,7 +52,8 @@ async function main() {
             port: PORT,
             kitManagerUrl: KIT_MANAGER_URL,
             logLevel: LOG_LEVEL,
-            skipKitManager: SKIP_KIT_MANAGER
+            skipKitManager: SKIP_KIT_MANAGER,
+            dataPath: process.env.DATA_DIR || './data'
         });
 
         await runtime.start();

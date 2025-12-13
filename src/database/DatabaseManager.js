@@ -20,13 +20,24 @@ export class DatabaseManager {
         this.logger.info('Initializing database', { dbPath: this.dbPath });
 
         try {
-            // Ensure database directory exists
-            await fs.ensureDir(path.dirname(this.dbPath));
+            // Ensure database directory exists with proper permissions
+            const dbDir = path.dirname(this.dbPath);
+            await fs.ensureDir(dbDir);
+            
+            // In test environments, ensure we have write permissions
+            if (process.env.NODE_ENV === 'test') {
+                try {
+                    await fs.chmod(dbDir, 0o755);
+                } catch (error) {
+                    this.logger.warn('Could not set directory permissions', { error: error.message });
+                }
+            }
 
-            // Open database connection
+            // Open database connection with write permissions
             this.db = await open({
                 filename: this.dbPath,
-                driver: sqlite3.Database
+                driver: sqlite3.Database,
+                mode: sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE
             });
 
             // Enable foreign keys
