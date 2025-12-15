@@ -5,7 +5,6 @@ import fs from 'fs-extra';
 import path from 'path';
 
 describe('Docker Build Tests', () => {
-    const TEST_TIMEOUT = 300000; // 5 minutes for Docker builds
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
 
     beforeEach(async () => {
@@ -313,4 +312,11 @@ describe('Docker Build Tests', () => {
         console.log(`✅ Entry point: ${config.Cmd.join(' ')}`);
     });
 
-}).timeout(TEST_TIMEOUT);
+    after(() => {
+        // Clear all pending timers to prevent timeout reference errors
+        const maxTimerId = setTimeout(() => {}, 0);
+        for (let i = 1; i <= maxTimerId; i++) {
+            clearTimeout(i);
+        }
+    });
+});

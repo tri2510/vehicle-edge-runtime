@@ -5,7 +5,6 @@ import http from 'node:http';
 import { spawn } from 'child_process';
 
 describe('Docker Container Lifecycle Tests', () => {
-    const TEST_TIMEOUT = 120000; // 2 minutes for container operations
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
     const CONTAINER_NAME = `vehicle-edge-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const WS_PORT = 3002;
@@ -746,4 +745,11 @@ describe('Docker Container Lifecycle Tests', () => {
         });
     });
 
-}).timeout(TEST_TIMEOUT);
+    after(() => {
+        // Clear all pending timers to prevent timeout reference errors
+        const maxTimerId = setTimeout(() => {}, 0);
+        for (let i = 1; i <= maxTimerId; i++) {
+            clearTimeout(i);
+        }
+    });
+});

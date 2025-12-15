@@ -5,7 +5,6 @@ import fs from 'fs-extra';
 import path from 'path';
 
 describe('Docker Deployment Script Tests', () => {
-    const TEST_TIMEOUT = 180000; // 3 minutes for deployment operations
     const SCRIPT_PATH = './docker-deploy.sh';
     const TEST_COMPOSE_FILE = 'docker-compose.test.yml';
 
@@ -420,4 +419,11 @@ services:
         }
     });
 
-}).timeout(TEST_TIMEOUT);
+    after(() => {
+        // Clear all pending timers to prevent timeout reference errors
+        const maxTimerId = setTimeout(() => {}, 0);
+        for (let i = 1; i <= maxTimerId; i++) {
+            clearTimeout(i);
+        }
+    });
+});

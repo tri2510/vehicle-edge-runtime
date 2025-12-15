@@ -5,7 +5,6 @@ import { spawn } from 'child_process';
 import http from 'node:http';
 
 describe('Docker WebSocket API Integration Tests', () => {
-    const TEST_TIMEOUT = 120000; // 2 minutes for Docker operations
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
     const CONTAINER_NAME = `vehicle-edge-api-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const WS_PORT = 3002;
@@ -535,4 +534,11 @@ asyncio.run(main())
         console.log(`✅ Connection stability maintained for ${messageCount} messages`);
     });
 
-}).timeout(TEST_TIMEOUT);
+    after(() => {
+        // Clear all pending timers to prevent timeout reference errors
+        const maxTimerId = setTimeout(() => {}, 0);
+        for (let i = 1; i <= maxTimerId; i++) {
+            clearTimeout(i);
+        }
+    });
+});
