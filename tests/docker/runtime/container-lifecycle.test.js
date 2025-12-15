@@ -1,8 +1,9 @@
 import { test, describe, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import WebSocket from 'ws';
-import http from 'node:http';
 import { spawn } from 'child_process';
+import net from 'node:net';
+import { dockerTestSetup } from '../helpers/test-setup.js';
 
 describe('Docker Container Lifecycle Tests', () => {
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
@@ -16,71 +17,25 @@ describe('Docker Container Lifecycle Tests', () => {
         return basePort + Math.floor(Math.random() * 100);
     }
 
-    async function checkPrerequisiteServices() {
-        console.log('🔍 Checking prerequisite services...');
-
-        // Check Kuksa server (localhost:55555)
-        try {
-            await new Promise((resolve, reject) => {
-                const req = http.get('http://localhost:8090/vss', (res) => {
-                    if (res.statusCode === 200) {
-                        console.log('✅ Kuksa server is running (port 8090 accessible)');
-                        resolve();
-                    } else {
-                        reject(new Error(`Kuksa HTTP endpoint returned ${res.statusCode}`));
-                    }
-                });
-                req.on('error', reject);
-                req.setTimeout(5000, reject);
-            });
-        } catch (error) {
-            console.log('⚠️ Kuksa server HTTP check failed:', error.message);
-            // Try to start Kuksa if not running
-            try {
-                console.log('🚀 Starting Kuksa server...');
-                await spawn('bash', ['./simulation/6-start-kuksa-server.sh'], { stdio: 'pipe' });
-                await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for startup
-                console.log('✅ Kuksa server started');
-            } catch (startError) {
-                console.log('⚠️ Could not start Kuksa server:', startError.message);
-            }
-        }
-
-        // Check Kit Manager (localhost:3090)
-        try {
-            await new Promise((resolve, reject) => {
-                const req = http.get('http://localhost:3090/listAllKits', (res) => {
-                    if (res.statusCode === 200) {
-                        console.log('✅ Kit Manager is running');
-                        resolve();
-                    } else {
-                        reject(new Error(`Kit Manager returned ${res.statusCode}`));
-                    }
-                });
-                req.on('error', reject);
-                req.setTimeout(5000, reject);
-            });
-        } catch (error) {
-            console.log('⚠️ Kit Manager check failed:', error.message);
-            // Try to start Kit Manager if not running
-            try {
-                console.log('🚀 Starting Kit Manager...');
-                await spawn('bash', ['./simulation/1-start-kit-manager.sh'], { stdio: 'pipe' });
-                await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for startup
-                console.log('✅ Kit Manager started');
-            } catch (startError) {
-                console.log('⚠️ Could not start Kit Manager:', startError.message);
-            }
-        }
+      async function checkPrerequisiteServices() {
+        // Use centralized test setup for prerequisite checks
+        return await dockerTestSetup.runPrerequisiteChecks();
     }
 
-    beforeEach(async () => {
+    before(async () => {
+        // Run comprehensive prerequisite checks and start services if needed
+        await dockerTestSetup.ensureServicesReady();
+
         // Build test image if not exists
         await buildTestImage();
+    });
+
+    beforeEach(async () => {
+        // Build test image if not exists (quick check)
+        await buildTestImage();
+
         // Stop any existing test container
         await stopContainer();
-        // Verify prerequisite services are running
-        await checkPrerequisiteServices();
     });
 
     afterEach(async () => {
@@ -168,22 +123,67 @@ describe('Docker Container Lifecycle Tests', () => {
 
         console.log(`🔍 Starting to wait for port ${port} (timeout: ${timeoutMs}ms)`);
 
+        // For health check port, wait a bit longer initially for app to start
+        if (healthCheck || port === 3003) {
+            console.log(`⏱️  Initial 10s wait for health check port ${port} to allow application startup...`);
+            await new Promise(resolve => setTimeout(resolve, 10000));
+        }
+
         while (retries < maxRetries) {
             try {
-                await new Promise((resolve, reject) => {
-                    const url = healthCheck ? `http://localhost:${port}/health` : `http://localhost:${port}/`;
-                    const req = http.get(url, (res) => {
-                        // Accept any response - we just need the port to be open
-                        resolve(res.statusCode >= 200);
+                // For health check port (3003), use HTTP
+                if (healthCheck || port === 3003) {
+                    await new Promise((resolve, reject) => {
+                        const url = `http://localhost:${port}/health`;
+                        const req = http.get(url, (res) => {
+                            let data = '';
+                            res.on('data', (chunk) => {
+                                data += chunk;
+                            });
+                            res.on('end', () => {
+                                if (res.statusCode >= 200 && res.statusCode < 400) {
+                                    resolve(true);
+                                } else {
+                                    reject(new Error(`HTTP ${res.statusCode}`));
+                                }
+                            });
+                        });
+                        req.on('error', reject);
+                        req.setTimeout(5000, () => {
+                            req.destroy();
+                            reject(new Error('HTTP request timeout'));
+                        });
                     });
-                    req.on('error', reject);
-                    req.setTimeout(5000, reject); // Increased timeout to 5s
-                });
-                console.log(`✅ Port ${port} is ready after ${(retries * checkInterval) / 1000}s`);
+                }
+                // For WebSocket port (3002), use TCP connection
+                else {
+                    await new Promise((resolve, reject) => {
+                        const socket = new net.Socket();
+
+                        socket.setTimeout(3000);
+                        socket.connect(port, 'localhost', () => {
+                            socket.destroy();
+                            resolve(true);
+                        });
+
+                        socket.on('error', () => {
+                            socket.destroy();
+                            reject(new Error(`Port ${port} not accessible`));
+                        });
+
+                        socket.on('timeout', () => {
+                            socket.destroy();
+                            reject(new Error(`Port ${port} connection timeout`));
+                        });
+                    });
+                }
+
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                console.log(`✅ Port ${port} is ready after ${elapsed}s`);
                 return true;
             } catch (error) {
                 retries++;
-                const elapsed = ((retries - 1) * checkInterval) / 1000;
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 console.log(`⏳ Waiting for port ${port}... (${elapsed}s elapsed, ${maxRetries - retries + 1} attempts left)`);
 
                 // Add longer delay after 10 attempts (20 seconds)
@@ -289,62 +289,49 @@ describe('Docker Container Lifecycle Tests', () => {
         console.log('🏥 Testing health check port exposure...');
 
         await startContainer();
-        await waitForPort(HEALTH_PORT, 60000, true);
 
-        // Try multiple approaches to test health endpoint
-        let healthData = null;
-        let success = false;
+        // Wait for application to fully initialize health check endpoint
+        console.log('⏱️  Waiting 15s for health check service to initialize...');
+        await new Promise(resolve => setTimeout(resolve, 15000));
 
-        // Method 1: Try fetch
-        try {
-            const response = await fetch(`http://localhost:${HEALTH_PORT}/health`, {
-                timeout: 5000
+        // Check if container is running (primary goal) - use any vehicle-edge container
+        const isRunning = await new Promise((resolve) => {
+            const docker = spawn('docker', ['ps', '--filter', 'name=vehicle-edge', '--format', '{{.Names}}\t{{.Status}}'], { stdio: 'pipe' });
+            let output = '';
+            docker.stdout.on('data', (data) => {
+                output += data.toString();
             });
-            if (response.status === 200) {
-                healthData = await response.json();
-                success = true;
-            }
-        } catch (fetchError) {
-            console.log('⚠️ Fetch method failed, trying alternative approach');
-        }
+            docker.on('close', (code) => {
+                const lines = output.trim().split('\n');
+                const runningContainer = lines.some(line => line.includes('vehicle-edge') && line.includes('Up'));
+                resolve(runningContainer);
+            });
+            docker.on('error', () => resolve(false));
+        });
 
-        // Method 2: Try Node.js http module
-        if (!success) {
-            try {
-                const http = await import('node:http');
-                healthData = await new Promise((resolve, reject) => {
-                    const req = http.get(`http://localhost:${HEALTH_PORT}/health`, (res) => {
-                        let data = '';
-                        res.on('data', chunk => data += chunk);
-                        res.on('end', () => {
-                            try {
-                                resolve(JSON.parse(data));
-                            } catch (e) {
-                                reject(e);
-                            }
-                        });
-                    });
-                    req.on('error', reject);
-                    req.setTimeout(5000, reject);
-                });
-                success = true;
-            } catch (httpError) {
-                console.log('⚠️ HTTP method failed');
-            }
-        }
+        assert.ok(isRunning, 'Container should be running');
 
-        // Method 3: Accept any port response as success
-        if (!success) {
-            console.log('⚠️ Health endpoint not fully functional, but port is accessible');
-            success = true; // Port accessibility is the main goal
-        }
+        // Verify TCP port accessibility (port is being listened on)
+        await new Promise((resolve, reject) => {
+            const socket = new net.Socket();
+            socket.setTimeout(3000);
+            socket.connect(HEALTH_PORT, 'localhost', () => {
+                socket.destroy();
+                console.log(`✅ Port ${HEALTH_PORT} TCP connection successful`);
+                resolve(true);
+            });
+            socket.on('error', () => {
+                socket.destroy();
+                reject(new Error(`Port ${HEALTH_PORT} not accessible`));
+            });
+            socket.on('timeout', () => {
+                socket.destroy();
+                reject(new Error(`Port ${HEALTH_PORT} connection timeout`));
+            });
+        });
 
-        assert.ok(success, 'Health check port should be accessible');
-        if (healthData && healthData.status) {
-            console.log('✅ Health endpoint fully functional');
-        } else {
-            console.log('✅ Health check port accessible (endpoint functionality not verified)');
-        }
+        console.log(`✅ Health check port ${HEALTH_PORT} verified accessible`);
+        console.log('✅ Container is running and health port is accessible');
     });
 
     test('should apply environment variables correctly', async () => {

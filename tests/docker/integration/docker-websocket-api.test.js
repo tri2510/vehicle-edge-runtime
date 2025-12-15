@@ -2,7 +2,7 @@ import { test, describe, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert';
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
-import http from 'node:http';
+import { dockerTestSetup } from '../helpers/test-setup.js';
 
 describe('Docker WebSocket API Integration Tests', () => {
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
@@ -15,29 +15,65 @@ describe('Docker WebSocket API Integration Tests', () => {
     async function checkPrerequisiteServices() {
         console.log('🔍 Integration tests: Checking prerequisite services...');
 
-        // Check Kuksa server (localhost:55555)
+        // Check Kuksa server (gRPC port 55555 or WebSocket VISS on port 8090)
         try {
+            // Check gRPC port accessibility first
             await new Promise((resolve, reject) => {
-                const req = http.get('http://localhost:8090/vss', (res) => {
-                    if (res.statusCode === 200) {
-                        console.log('✅ Integration tests: Kuksa server is running');
-                        resolve();
-                    } else {
-                        reject(new Error(`Kuksa HTTP endpoint returned ${res.statusCode}`));
-                    }
+                const net = require('net');
+                const socket = new net.Socket();
+
+                socket.setTimeout(3000);
+                socket.connect(55555, 'localhost', () => {
+                    socket.destroy();
+                    console.log('✅ Integration tests: Kuksa gRPC server is running (port 55555 accessible)');
+                    resolve();
                 });
-                req.on('error', reject);
-                req.setTimeout(5000, reject);
+
+                socket.on('error', () => {
+                    socket.destroy();
+                    reject(new Error('Kuksa gRPC port not accessible'));
+                });
+
+                socket.on('timeout', () => {
+                    socket.destroy();
+                    reject(new Error('Kuksa gRPC connection timeout'));
+                });
             });
-        } catch (error) {
-            console.log('⚠️ Integration tests: Kuksa server check failed:', error.message);
+        } catch (grpcError) {
+            console.log('⚠️ Integration tests: Kuksa gRPC check failed, trying WebSocket VISS...');
+            // Fallback to check WebSocket VISS service
             try {
-                console.log('🚀 Integration tests: Starting Kuksa server...');
-                await spawn('bash', ['./simulation/6-start-kuksa-server.sh'], { stdio: 'pipe' });
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                console.log('✅ Integration tests: Kuksa server started');
-            } catch (startError) {
-                console.log('⚠️ Integration tests: Could not start Kuksa server:', startError.message);
+                await new Promise((resolve, reject) => {
+                    const net = require('net');
+                    const socket = new net.Socket();
+
+                    socket.setTimeout(3000);
+                    socket.connect(8090, 'localhost', () => {
+                        socket.destroy();
+                        console.log('✅ Integration tests: Kuksa WebSocket VISS service is running (port 8090 accessible)');
+                        resolve();
+                    });
+
+                    socket.on('error', () => {
+                        socket.destroy();
+                        reject(new Error('Kuksa WebSocket port not accessible'));
+                    });
+
+                    socket.on('timeout', () => {
+                        socket.destroy();
+                        reject(new Error('Kuksa WebSocket connection timeout'));
+                    });
+                });
+            } catch (wsError) {
+                console.log('⚠️ Integration tests: Kuksa server not accessible:', wsError.message);
+                try {
+                    console.log('🚀 Integration tests: Starting Kuksa server...');
+                    await spawn('bash', ['./simulation/6-start-kuksa-server.sh'], { stdio: 'pipe' });
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    console.log('✅ Integration tests: Kuksa server started');
+                } catch (startError) {
+                    console.log('⚠️ Integration tests: Could not start Kuksa server:', startError.message);
+                }
             }
         }
 
