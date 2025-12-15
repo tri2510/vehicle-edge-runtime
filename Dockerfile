@@ -20,7 +20,8 @@ RUN apk add --no-cache \
 # Create non-root user with Docker group access
 RUN addgroup -g 1001 -S nodejs && \
     addgroup -g 1337 docker && \
-    adduser -S vehicle-edge -u 1001 -G nodejs,docker
+    adduser -S vehicle-edge -u 1001 -G nodejs && \
+    adduser vehicle-edge docker
 
 # Set working directory
 WORKDIR /app
@@ -29,10 +30,11 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies (production only)
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy source code
+# Copy source code and proto files
 COPY --chown=vehicle-edge:nodejs src/ ./src/
+COPY --chown=vehicle-edge:nodejs proto/ ./proto/
 
 # Create data directories
 RUN mkdir -p /app/data/applications /app/data/logs /app/data/configs && \

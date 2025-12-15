@@ -9,6 +9,11 @@ describe('Docker Deployment Script Tests', () => {
     const SCRIPT_PATH = './docker-deploy.sh';
     const TEST_COMPOSE_FILE = 'docker-compose.test.yml';
 
+    // Add global timeout for tests
+    setTimeout(() => {
+        // Clear any hanging resources
+    }, TEST_TIMEOUT + 30000);
+
     before(async () => {
         // Ensure docker-deploy.sh is executable
         try {
@@ -93,7 +98,7 @@ services:
     async function runDeployScript(args = []) {
         return new Promise((resolve, reject) => {
             // Create a test version of the script that uses test compose file
-            const testScriptContent = await fs.readFile(SCRIPT_PATH, 'utf8');
+            const testScriptContent = fs.readFileSync(SCRIPT_PATH, 'utf8');
             const modifiedScript = testScriptContent.replace(/docker-compose\.new\.yml/g, TEST_COMPOSE_FILE);
             const modifiedScript2 = modifiedScript.replace(/docker-compose\.yml/g, TEST_COMPOSE_FILE);
 
