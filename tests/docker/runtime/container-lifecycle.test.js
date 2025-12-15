@@ -5,9 +5,9 @@ import http from 'node:http';
 import { spawn } from 'child_process';
 
 describe('Docker Container Lifecycle Tests', () => {
-    const TEST_TIMEOUT = 60000; // 1 minute for container operations
+    const TEST_TIMEOUT = 120000; // 2 minutes for container operations
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
-    const CONTAINER_NAME = 'vehicle-edge-test';
+    const CONTAINER_NAME = `vehicle-edge-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const WS_PORT = 3002;
     const HEALTH_PORT = 3003;
 
@@ -113,8 +113,6 @@ describe('Docker Container Lifecycle Tests', () => {
             const args = [
                 'run', '-d',
                 '--name', CONTAINER_NAME,
-                '-p', `${WS_PORT}:3002`,
-                '-p', `${HEALTH_PORT}:3003`,
                 '-v', `${process.cwd()}/data:/app/data`,
                 '-v', '/var/run/docker.sock:/var/run/docker.sock',
                 // Use host network to access localhost services directly
@@ -150,6 +148,7 @@ describe('Docker Container Lifecycle Tests', () => {
 
     async function stopContainer() {
         return new Promise((resolve) => {
+            // First check if container exists and stop it
             const docker = spawn('docker', ['stop', CONTAINER_NAME], { stdio: 'pipe' });
 
             docker.on('close', () => {
@@ -162,7 +161,7 @@ describe('Docker Container Lifecycle Tests', () => {
         });
     }
 
-    async function waitForPort(port, timeoutMs = 90000, healthCheck = false) {
+    async function waitForPort(port, timeoutMs = 120000, healthCheck = false) {
         const startTime = Date.now();
         const checkInterval = 2000; // Increased to 2s to reduce system load
         const maxRetries = Math.floor(timeoutMs / checkInterval);
@@ -574,7 +573,7 @@ describe('Docker Container Lifecycle Tests', () => {
         // since we're testing shutdown behavior
         let containerStarted = false;
         try {
-            await waitForPort(WS_PORT, 20000); // Shorter timeout
+            await waitForPort(WS_PORT, 45000); // Increased timeout for container startup
             containerStarted = true;
             console.log('✅ Container fully started');
         } catch (error) {

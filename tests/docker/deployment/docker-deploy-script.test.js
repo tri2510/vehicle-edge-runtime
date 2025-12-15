@@ -9,11 +9,6 @@ describe('Docker Deployment Script Tests', () => {
     const SCRIPT_PATH = './docker-deploy.sh';
     const TEST_COMPOSE_FILE = 'docker-compose.test.yml';
 
-    // Add global timeout for tests
-    setTimeout(() => {
-        // Clear any hanging resources
-    }, TEST_TIMEOUT + 30000);
-
     before(async () => {
         // Ensure docker-deploy.sh is executable
         try {
@@ -76,7 +71,7 @@ services:
 
     async function cleanupTestEnvironment() {
         return new Promise((resolve) => {
-            // Stop any test containers
+            // Stop any test containers using docker compose (v2)
             const dockerStop = spawn('docker', ['compose', '-f', TEST_COMPOSE_FILE, 'down', '-v'], {
                 stdio: 'pipe'
             });
@@ -97,14 +92,26 @@ services:
 
     function runDeployScript(args = []) {
         return new Promise(async (resolve, reject) => {
+            let tempScriptPath;
             try {
-                // Create a test version of the script that uses test compose file
+                // Create a test version of the script that uses test compose file and existing Dockerfile
                 const testScriptContent = fs.readFileSync(SCRIPT_PATH, 'utf8');
-                const modifiedScript = testScriptContent.replace(/docker-compose\.new\.yml/g, TEST_COMPOSE_FILE);
-                const modifiedScript2 = modifiedScript.replace(/docker-compose\.yml/g, TEST_COMPOSE_FILE);
 
-                const tempScriptPath = './docker-deploy-test.sh';
-                await fs.writeFile(tempScriptPath, modifiedScript2);
+                // Replace entire command patterns to avoid file name conflicts
+                let modifiedScript = testScriptContent;
+
+                // Replace docker-compose commands with docker compose (v2)
+                modifiedScript = modifiedScript.replace(/docker-compose -f docker-compose\.new\.yml/g, `docker compose -f ${TEST_COMPOSE_FILE}`);
+                modifiedScript = modifiedScript.replace(/docker-compose -f docker-compose\.yml/g, `docker compose -f ${TEST_COMPOSE_FILE}`);
+
+                // Replace Dockerfile.new with Dockerfile
+                modifiedScript = modifiedScript.replace(/Dockerfile\.new/g, 'Dockerfile');
+
+                // Remove the .env.production dependency since we'll create .env directly
+                modifiedScript = modifiedScript.replace(/cp \.env\.production \.env/g, 'echo "KIT_MANAGER_URL=ws://kit.digitalauto.tech" > .env');
+
+                tempScriptPath = './docker-deploy-test.sh';
+                await fs.writeFile(tempScriptPath, modifiedScript);
                 await fs.chmod(tempScriptPath, '755');
 
                 const dockerDeploy = spawn('bash', [tempScriptPath, ...args], {

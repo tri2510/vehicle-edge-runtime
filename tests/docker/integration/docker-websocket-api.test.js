@@ -7,7 +7,7 @@ import http from 'node:http';
 describe('Docker WebSocket API Integration Tests', () => {
     const TEST_TIMEOUT = 120000; // 2 minutes for Docker operations
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
-    const CONTAINER_NAME = 'vehicle-edge-api-test';
+    const CONTAINER_NAME = `vehicle-edge-api-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const WS_PORT = 3002;
     const HEALTH_PORT = 3003;
 
@@ -131,8 +131,6 @@ describe('Docker WebSocket API Integration Tests', () => {
             const args = [
                 'run', '-d',
                 '--name', CONTAINER_NAME,
-                '-p', `${WS_PORT}:3002`,
-                '-p', `${HEALTH_PORT}:3003`,
                 '-v', `${process.cwd()}/data:/app/data`,
                 '-v', '/var/run/docker.sock:/var/run/docker.sock',
                 ...options,
