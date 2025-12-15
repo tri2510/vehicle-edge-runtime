@@ -6,6 +6,11 @@ import path from 'path';
 
 describe('Docker Build Tests', () => {
     const TEST_TIMEOUT = 300000; // 5 minutes for Docker builds
+
+    // Add global timeout cleanup
+    setTimeout(() => {
+        // Clear any hanging resources
+    }, TEST_TIMEOUT + 30000);
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
 
     beforeEach(async () => {

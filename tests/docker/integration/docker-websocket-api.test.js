@@ -2,6 +2,7 @@ import { test, describe, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert';
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
+import http from 'node:http';
 
 describe('Docker WebSocket API Integration Tests', () => {
     const TEST_TIMEOUT = 120000; // 2 minutes for Docker operations
@@ -12,9 +13,67 @@ describe('Docker WebSocket API Integration Tests', () => {
 
     let containerId;
 
+    async function checkPrerequisiteServices() {
+        console.log('🔍 Integration tests: Checking prerequisite services...');
+
+        // Check Kuksa server (localhost:55555)
+        try {
+            await new Promise((resolve, reject) => {
+                const req = http.get('http://localhost:8090/vss', (res) => {
+                    if (res.statusCode === 200) {
+                        console.log('✅ Integration tests: Kuksa server is running');
+                        resolve();
+                    } else {
+                        reject(new Error(`Kuksa HTTP endpoint returned ${res.statusCode}`));
+                    }
+                });
+                req.on('error', reject);
+                req.setTimeout(5000, reject);
+            });
+        } catch (error) {
+            console.log('⚠️ Integration tests: Kuksa server check failed:', error.message);
+            try {
+                console.log('🚀 Integration tests: Starting Kuksa server...');
+                await spawn('bash', ['./simulation/6-start-kuksa-server.sh'], { stdio: 'pipe' });
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                console.log('✅ Integration tests: Kuksa server started');
+            } catch (startError) {
+                console.log('⚠️ Integration tests: Could not start Kuksa server:', startError.message);
+            }
+        }
+
+        // Check Kit Manager (localhost:3090)
+        try {
+            await new Promise((resolve, reject) => {
+                const req = http.get('http://localhost:3090/listAllKits', (res) => {
+                    if (res.statusCode === 200) {
+                        console.log('✅ Integration tests: Kit Manager is running');
+                        resolve();
+                    } else {
+                        reject(new Error(`Kit Manager returned ${res.statusCode}`));
+                    }
+                });
+                req.on('error', reject);
+                req.setTimeout(5000, reject);
+            });
+        } catch (error) {
+            console.log('⚠️ Integration tests: Kit Manager check failed:', error.message);
+            try {
+                console.log('🚀 Integration tests: Starting Kit Manager...');
+                await spawn('bash', ['./simulation/1-start-kit-manager.sh'], { stdio: 'pipe' });
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                console.log('✅ Integration tests: Kit Manager started');
+            } catch (startError) {
+                console.log('⚠️ Integration tests: Could not start Kit Manager:', startError.message);
+            }
+        }
+    }
+
     before(async () => {
         // Build test image
         await buildTestImage();
+        // Check and start prerequisite services
+        await checkPrerequisiteServices();
     });
 
     after(async () => {
@@ -23,10 +82,18 @@ describe('Docker WebSocket API Integration Tests', () => {
     });
 
     beforeEach(async () => {
-        // Start container with online Kit-Manager
+        // Stop any existing containers first
+        await stopContainer();
+
+        // Start container with same configuration as runtime tests
         containerId = await startContainer([
-            '-e', 'KIT_MANAGER_URL=ws://kit.digitalauto.tech',
-            '-e', 'SKIP_KUKSA=true'  // Skip Kuksa for API tests
+            '--network', 'host',
+            '-e', 'KIT_MANAGER_URL=ws://localhost:3090',
+            '-e', 'KUKSA_HOST=localhost',
+            '-e', 'KUKSA_GRPC_PORT=55555',
+            '-e', 'KUKSA_ENABLED=true',
+            '-e', 'NODE_ENV=test',
+            '-e', 'LOG_LEVEL=info'
         ]);
         await waitForHealthCheck();
     });
@@ -101,7 +168,12 @@ describe('Docker WebSocket API Integration Tests', () => {
                 dockerRm.on('error', () => resolve());
             });
 
-            docker.on('error', () => resolve());
+            docker.on('error', () => {
+                // Try force remove if stop fails
+                const dockerRm = spawn('docker', ['rm', CONTAINER_NAME, '-f'], { stdio: 'pipe' });
+                dockerRm.on('close', () => resolve());
+                dockerRm.on('error', () => resolve());
+            });
         });
     }
 

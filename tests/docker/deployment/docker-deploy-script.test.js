@@ -95,18 +95,19 @@ services:
         });
     }
 
-    async function runDeployScript(args = []) {
-        return new Promise((resolve, reject) => {
-            // Create a test version of the script that uses test compose file
-            const testScriptContent = fs.readFileSync(SCRIPT_PATH, 'utf8');
-            const modifiedScript = testScriptContent.replace(/docker-compose\.new\.yml/g, TEST_COMPOSE_FILE);
-            const modifiedScript2 = modifiedScript.replace(/docker-compose\.yml/g, TEST_COMPOSE_FILE);
+    function runDeployScript(args = []) {
+        return new Promise(async (resolve, reject) => {
+            try {
+                // Create a test version of the script that uses test compose file
+                const testScriptContent = fs.readFileSync(SCRIPT_PATH, 'utf8');
+                const modifiedScript = testScriptContent.replace(/docker-compose\.new\.yml/g, TEST_COMPOSE_FILE);
+                const modifiedScript2 = modifiedScript.replace(/docker-compose\.yml/g, TEST_COMPOSE_FILE);
 
-            const tempScriptPath = './docker-deploy-test.sh';
-            await fs.writeFile(tempScriptPath, modifiedScript2);
-            await fs.chmod(tempScriptPath, '755');
+                const tempScriptPath = './docker-deploy-test.sh';
+                await fs.writeFile(tempScriptPath, modifiedScript2);
+                await fs.chmod(tempScriptPath, '755');
 
-            const dockerDeploy = spawn('bash', [tempScriptPath, ...args], {
+                const dockerDeploy = spawn('bash', [tempScriptPath, ...args], {
                 stdio: 'pipe',
                 cwd: process.cwd()
             });
@@ -133,6 +134,14 @@ services:
                 fs.remove(tempScriptPath).catch(() => {});
                 reject(error);
             });
+
+            } catch (error) {
+                // Clean up temporary script if it exists
+                if (fs.existsSync(tempScriptPath)) {
+                    fs.remove(tempScriptPath).catch(() => {});
+                }
+                reject(error);
+            }
         });
     }
 
