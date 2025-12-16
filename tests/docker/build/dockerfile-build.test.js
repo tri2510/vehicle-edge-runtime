@@ -5,7 +5,7 @@ import fs from 'fs-extra';
 import path from 'path';
 
 describe('Docker Build Tests', () => {
-    const TEST_IMAGE = 'vehicle-edge-runtime:test';
+    const TEST_IMAGE = 'vehicle-edge-runtime:test-build';
 
     beforeEach(async () => {
         // Clean up any existing test images

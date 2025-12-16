@@ -6,7 +6,7 @@ import net from 'node:net';
 import { dockerTestSetup } from '../helpers/test-setup.js';
 
 describe('Docker Container Lifecycle Tests', () => {
-    const TEST_IMAGE = 'vehicle-edge-runtime:test';
+    const TEST_IMAGE = 'vehicle-edge-runtime:test-build';
     const CONTAINER_NAME = `vehicle-edge-test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const WS_PORT = 3002;
     const HEALTH_PORT = 3003;

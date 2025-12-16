@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import { testCoordinator } from '../helpers/test-resource-manager.js';
 
 describe('Fast Docker Container Lifecycle Tests', () => {
-    const TEST_IMAGE = 'vehicle-edge-runtime:test';
+    const TEST_IMAGE = 'vehicle-edge-runtime:test-build';
     let resourceManager;
     let CONTAINER_NAME;
     let WS_PORT;
