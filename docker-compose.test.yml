@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vehicle-edge-test-c7d6f729
+    container_name: vehicle-edge-test-0edb4856
     ports:
       - "13002:3002"  # Different ports for testing
       - "13003:3003"
