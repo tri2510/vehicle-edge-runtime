@@ -17,6 +17,7 @@ let PORT = process.env.PORT || 3002;
 let KIT_MANAGER_URL = process.env.KIT_MANAGER_URL || 'ws://localhost:3090';
 let LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 let SKIP_KIT_MANAGER = process.env.SKIP_KIT_MANAGER === 'true';
+let SKIP_KUKSA = process.env.SKIP_KUKSA === 'true';
 let RUNTIME_ID = process.env.RUNTIME_ID || null;
 
 for (let i = 0; i < args.length; i++) {
@@ -33,6 +34,9 @@ for (let i = 0; i < args.length; i++) {
         case '--skip-kit-manager':
             SKIP_KIT_MANAGER = true;
             break;
+        case '--skip-kuksa':
+            SKIP_KUKSA = true;
+            break;
         case '--runtime-id':
             RUNTIME_ID = args[++i];
             break;
@@ -47,12 +51,14 @@ async function main() {
         console.log(`Log Level: ${LOG_LEVEL}`);
         if (RUNTIME_ID) console.log(`Runtime ID: ${RUNTIME_ID}`);
         if (SKIP_KIT_MANAGER) console.log('Kit Manager: DISABLED');
+        if (SKIP_KUKSA) console.log('Kuksa: DISABLED');
 
         const runtime = new VehicleEdgeRuntime({
             port: PORT,
             kitManagerUrl: KIT_MANAGER_URL,
             logLevel: LOG_LEVEL,
             skipKitManager: SKIP_KIT_MANAGER,
+            skipKuksa: SKIP_KUKSA,
             dataPath: process.env.DATA_DIR || './data'
         });
 

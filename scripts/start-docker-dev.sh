@@ -86,23 +86,63 @@ build_image() {
 # Start container
 start_container() {
     log "Starting Vehicle Edge Runtime container..."
+    log "Kit Manager: ${ENABLE_KIT_MANAGER}"
+    log "Kuksa: ${ENABLE_KUKSA}"
 
     # Create data directory
     mkdir -p "${PROJECT_DIR}/data"
 
+    # Set environment variables based on options
+    local env_args=(
+        -e NODE_ENV=development
+        -e PORT=3002
+        -e HEALTH_PORT=3003
+        -e LOG_LEVEL=debug
+        -e KIT_MANAGER_URL="${KIT_MANAGER_URL}"
+        -e KUKSA_URL="${KUKSA_URL}"
+    )
+
+    # Configure Kit Manager
+    if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
+        env_args+=(-e SKIP_KIT_MANAGER=false)
+        log "Kit Manager enabled: ${KIT_MANAGER_URL}"
+        # Update URL for host networking
+        KIT_MANAGER_URL="ws://localhost:3090"
+        env_args+=(-e KIT_MANAGER_URL="${KIT_MANAGER_URL}")
+    else
+        env_args+=(-e SKIP_KIT_MANAGER=true)
+        log "Kit Manager disabled"
+    fi
+
+    # Configure Kuksa
+    if [ "$ENABLE_KUKSA" = "true" ]; then
+        env_args+=(-e SKIP_KUKSA=false -e KUKSA_ENABLED=true)
+        log "Kuksa enabled: ${KUKSA_URL}"
+    else
+        env_args+=(-e SKIP_KUKSA=true -e KUKSA_ENABLED=false)
+        log "Kuksa disabled"
+    fi
+
+    # Build docker run command
+    local docker_args=(
+        --name "${CONTAINER_NAME}"
+        --restart unless-stopped
+        -v "${PROJECT_DIR}/data:/app/data"
+        -v /var/run/docker.sock:/var/run/docker.sock
+    )
+
+    # Use host network when Kit Manager is enabled for easier connectivity
+    if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
+        docker_args+=(--network=host)
+        log "Using host network for Kit Manager connectivity"
+    else
+        docker_args+=(-p "${PORT}:3002" -p "${HEALTH_PORT}:3003")
+    fi
+
     # Start the container
     docker run -d \
-        --name "${CONTAINER_NAME}" \
-        --restart unless-stopped \
-        -p "${PORT}:3002" \
-        -p "${HEALTH_PORT}:3003" \
-        -v "${PROJECT_DIR}/data:/app/data" \
-        -e NODE_ENV=development \
-        -e PORT=3002 \
-        -e HEALTH_PORT=3003 \
-        -e LOG_LEVEL=debug \
-        -e SKIP_KUKSA=true \
-        -e SKIP_KIT_MANAGER=true \
+        "${docker_args[@]}" \
+        "${env_args[@]}" \
         "${IMAGE_NAME}"
 
     if [ $? -eq 0 ]; then
@@ -126,10 +166,29 @@ show_info() {
     echo "   Health Port: ${HEALTH_PORT}"
     echo
     echo "🔗 Endpoints:"
-    echo "   Runtime API: http://localhost:${PORT}"
-    echo "   Health Check: http://localhost:${HEALTH_PORT}"
-    echo "   WebSocket: ws://localhost:${PORT}/runtime"
+    if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
+        echo "   Runtime API: http://localhost:3002 (host network)"
+        echo "   Health Check: http://localhost:3003 (host network)"
+        echo "   WebSocket: ws://localhost:3002/runtime (host network)"
+    else
+        echo "   Runtime API: http://localhost:${PORT}"
+        echo "   Health Check: http://localhost:${HEALTH_PORT}"
+        echo "   WebSocket: ws://localhost:${PORT}/runtime"
+    fi
     echo
+    echo "⚙️ Configuration:"
+    echo "   Kit Manager: $([ "$ENABLE_KIT_MANAGER" = "true" ] && echo "✅ Enabled (ws://localhost:3090)" || echo "❌ Disabled")"
+    echo "   Kuksa: $([ "$ENABLE_KUKSA" = "true" ] && echo "✅ Enabled (${KUKSA_URL})" || echo "❌ Disabled")"
+    if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
+        echo "   Network: Host mode (for Kit Manager connectivity)"
+    fi
+    echo
+    if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
+        echo "🔗 Kit Manager:"
+        echo "   Check registration: curl http://localhost:3090/listAllKits"
+        echo "   Deploy app: curl -X POST http://localhost:3090/deployApp -H 'Content-Type: application/json' -d '{\"to_kit_id\":\"<kit_id>\",\"code\":\"console.log(\"hello\")\"}'"
+        echo
+    fi
     echo "🛠️ Development Commands:"
     echo "   View logs:      docker logs -f ${CONTAINER_NAME}"
     echo "   Stop container: docker stop ${CONTAINER_NAME}"
@@ -219,7 +278,7 @@ show_logs() {
 show_usage() {
     echo "Vehicle Edge Runtime Docker Development Script"
     echo
-    echo "Usage: $0 [COMMAND]"
+    echo "Usage: $0 [COMMAND] [OPTIONS]"
     echo
     echo "Commands:"
     echo "  start       Build and start the runtime (default)"
@@ -230,16 +289,76 @@ show_usage() {
     echo "  clean       Stop and remove container"
     echo "  help        Show this help message"
     echo
+    echo "Options:"
+    echo "  --skip-kit-manager     Disable Kit Manager connection (default: enabled)"
+    echo "  --with-kuksa          Enable Kuksa connection (default: disabled)"
+    echo "  --kit-manager-url     Set custom Kit Manager URL (default: ws://host.docker.internal:3090)"
+    echo "  --kuksa-url           Set custom Kuksa URL (default: localhost:55555)"
+    echo
+    echo "Environment Variables:"
+    echo "  ENABLE_KIT_MANAGER    Set to 'false' to disable Kit Manager (default: true)"
+    echo "  ENABLE_KUKSA          Set to 'true' to enable Kuksa (default: false)"
+    echo "  KIT_MANAGER_URL       Kit Manager WebSocket URL"
+    echo "  KUKSA_URL             Kuksa gRPC URL"
+    echo
     echo "Quick Start:"
-    echo "  $0          # Start the runtime"
-    echo "  $0 logs     # View logs"
-    echo "  $0 status   # Check status"
-    echo "  $0 stop     # Stop when done"
+    echo "  $0                                      # Start the runtime with Kit Manager (default)"
+    echo "  $0 --skip-kit-manager                   # Start without Kit Manager (isolated)"
+    echo "  $0 --with-kuksa                         # Start with both Kit Manager and Kuksa"
+    echo "  ENABLE_KIT_MANAGER=false $0             # Start without Kit Manager via env var"
+    echo "  $0 logs                                 # View logs"
+    echo "  $0 status                               # Check status"
+    echo "  $0 stop                                 # Stop when done"
     echo
 }
 
+# Default values
+ENABLE_KIT_MANAGER="${ENABLE_KIT_MANAGER:-true}"
+ENABLE_KUKSA="${ENABLE_KUKSA:-false}"
+KIT_MANAGER_URL="${KIT_MANAGER_URL:-ws://host.docker.internal:3090}"
+KUKSA_URL="${KUKSA_URL:-localhost:55555}"
+
 # Parse command line arguments
-COMMAND="${1:-start}"
+COMMAND="start"
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        start|stop|restart|status|logs|clean|help)
+            COMMAND="$1"
+            shift
+            ;;
+        --with-kit-manager)
+            ENABLE_KIT_MANAGER="true"
+            shift
+            ;;
+        --skip-kit-manager)
+            ENABLE_KIT_MANAGER="false"
+            shift
+            ;;
+        --with-kuksa)
+            ENABLE_KUKSA="true"
+            shift
+            ;;
+        --kit-manager-url)
+            KIT_MANAGER_URL="$2"
+            shift 2
+            ;;
+        --kuksa-url)
+            KUKSA_URL="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_usage
+            exit 0
+            ;;
+        *)
+            error "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
 
 # Main execution
 main() {
