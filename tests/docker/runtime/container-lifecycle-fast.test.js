@@ -2,54 +2,26 @@ import { test, describe, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert';
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
-import { randomBytes } from 'crypto';
-import net from 'node:net';
+import { testCoordinator } from '../helpers/test-resource-manager.js';
 
 describe('Fast Docker Container Lifecycle Tests', () => {
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
-    const TEST_ID = randomBytes(4).toString('hex');
-    const CONTAINER_NAME = `vehicle-edge-test-fast-${TEST_ID}`;
-    let WS_PORT; // Dynamic port allocation
+    let resourceManager;
+    let CONTAINER_NAME;
+    let WS_PORT;
     let HEALTH_PORT;
 
-    // Check if a port is available
-    function checkPortAvailable(port) {
-        return new Promise((resolve) => {
-            const server = net.createServer();
-
-            server.listen(port, () => {
-                server.once('close', () => {
-                    resolve(true);
-                });
-                server.close();
-            });
-
-            server.on('error', () => {
-                resolve(false);
-            });
-        });
-    }
-
-    // Get available ports
-    async function getAvailablePorts() {
-        const basePort = 32000;
-        for (let i = 0; i < 100; i++) {
-            const testPort = basePort + i;
-            if (await checkPortAvailable(testPort) && await checkPortAvailable(testPort + 1)) {
-                return {
-                    ws: testPort,
-                    health: testPort + 1
-                };
-            }
-        }
-        throw new Error('No available ports found');
-    }
-
+  
     before(async () => {
-        // Get available ports
-        const ports = await getAvailablePorts();
-        WS_PORT = ports.ws;
-        HEALTH_PORT = ports.health;
+        // Initialize resource manager
+        resourceManager = testCoordinator.registerTest('fast-container-lifecycle');
+
+        // Allocate ports using resource manager
+        const ports = await resourceManager.allocatePorts(2);
+        [WS_PORT, HEALTH_PORT] = ports;
+
+        // Generate unique container name
+        CONTAINER_NAME = resourceManager.getContainerName();
 
         // Verify Docker daemon is running
         await new Promise((resolve, reject) => {
@@ -103,34 +75,37 @@ describe('Fast Docker Container Lifecycle Tests', () => {
     });
 
     after(async () => {
-        // Clean up any remaining containers
-        try {
-            await spawn('docker', ['rm', '-f', CONTAINER_NAME], { stdio: 'pipe' });
-        } catch (e) {
-            // Ignore cleanup errors
+        // Clean up all resources using resource manager
+        if (resourceManager) {
+            await testCoordinator.unregisterTest('fast-container-lifecycle');
         }
     });
 
     beforeEach(async () => {
-        // Clean up any existing container
+        // Generate unique container name for each test
+        CONTAINER_NAME = resourceManager.getContainerName('test');
+
+        // Clean up any existing container with this name
         try {
-            await spawn('docker', ['stop', CONTAINER_NAME], { stdio: 'pipe' });
-            await spawn('docker', ['rm', '-f', CONTAINER_NAME], { stdio: 'pipe' });
+            await resourceManager.execCommand(`docker stop ${CONTAINER_NAME}`, 5000);
+            await resourceManager.execCommand(`docker rm -f ${CONTAINER_NAME}`, 5000);
         } catch (e) {
             // Ignore cleanup errors
         }
 
-        // Wait a moment for cleanup
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait a moment between tests
+        await new Promise(resolve => setTimeout(resolve, 500));
     });
 
     afterEach(async () => {
         // Clean up container after each test
-        try {
-            await spawn('docker', ['stop', CONTAINER_NAME], { stdio: 'pipe' });
-            await spawn('docker', ['rm', '-f', CONTAINER_NAME], { stdio: 'pipe' });
-        } catch (e) {
-            // Ignore cleanup errors
+        if (CONTAINER_NAME) {
+            try {
+                await resourceManager.execCommand(`docker stop ${CONTAINER_NAME}`, 10000);
+                await resourceManager.execCommand(`docker rm -f ${CONTAINER_NAME}`, 5000);
+            } catch (e) {
+                // Ignore cleanup errors
+            }
         }
     });
 
@@ -362,11 +337,4 @@ describe('Fast Docker Container Lifecycle Tests', () => {
         console.log('✅ Container cleanup test passed');
     });
 
-    after(() => {
-        // Clear timers
-        const maxTimerId = setTimeout(() => {}, 0);
-        for (let i = 1; i <= maxTimerId; i++) {
-            clearTimeout(i);
-        }
-    });
-});
+  });
