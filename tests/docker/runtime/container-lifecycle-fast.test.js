@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import WebSocket from 'ws';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
+import net from 'node:net';
 
 describe('Fast Docker Container Lifecycle Tests', () => {
     const TEST_IMAGE = 'vehicle-edge-runtime:test';
@@ -14,7 +15,6 @@ describe('Fast Docker Container Lifecycle Tests', () => {
     // Check if a port is available
     function checkPortAvailable(port) {
         return new Promise((resolve) => {
-            const net = require('net');
             const server = net.createServer();
 
             server.listen(port, () => {
@@ -59,6 +59,46 @@ describe('Fast Docker Container Lifecycle Tests', () => {
                 else reject(new Error('Docker daemon not running'));
             });
             dockerVersion.on('error', reject);
+        });
+
+        // Ensure test image exists - build if it doesn't
+        console.log('🔍 Checking for test image...');
+        await new Promise((resolve, reject) => {
+            const dockerImages = spawn('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}', TEST_IMAGE], {
+                stdio: 'pipe',
+                timeout: 10000
+            });
+
+            let output = '';
+            dockerImages.stdout.on('data', (data) => {
+                output += data.toString().trim();
+            });
+
+            dockerImages.on('close', (code) => {
+                if (code === 0 && output.includes(TEST_IMAGE)) {
+                    console.log('✅ Test image found');
+                    resolve();
+                } else {
+                    console.log('🔨 Building test image...');
+                    const dockerBuild = spawn('docker', ['build', '-t', TEST_IMAGE, '.'], {
+                        stdio: 'inherit',
+                        timeout: 120000
+                    });
+
+                    dockerBuild.on('close', (buildCode) => {
+                        if (buildCode === 0) {
+                            console.log('✅ Test image built successfully');
+                            resolve();
+                        } else {
+                            reject(new Error(`Docker build failed: code ${buildCode}`));
+                        }
+                    });
+
+                    dockerBuild.on('error', reject);
+                }
+            });
+
+            dockerImages.on('error', reject);
         });
     });
 

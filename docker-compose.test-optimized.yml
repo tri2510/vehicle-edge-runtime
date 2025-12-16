@@ -1,0 +1,33 @@
+# Test version of docker-compose.yml with optimized configuration
+version: '3.8'
+
+services:
+  vehicle-edge-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vehicle-edge-test
+    ports:
+      - "13002:3002"  # Different ports for testing
+      - "13003:3003"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=test
+      - PORT=3002
+      - LOG_LEVEL=info
+      - KIT_MANAGER_URL=ws://host.docker.internal:3090
+      - SKIP_KUKSA=true
+    restart: "no"  # Don't restart automatically in tests
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge
