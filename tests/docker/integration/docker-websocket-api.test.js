@@ -105,8 +105,51 @@ describe('Docker WebSocket API Integration Tests', () => {
     }
 
     before(async () => {
-        // Build test image
-        await buildTestImage();
+        // Ensure test image exists - build if it doesn't
+        console.log('🔍 Checking for test image...');
+        try {
+            await new Promise((resolve, reject) => {
+                const dockerImages = spawn('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}', TEST_IMAGE], {
+                    stdio: 'pipe',
+                    timeout: 10000
+                });
+
+                let output = '';
+                dockerImages.stdout.on('data', (data) => {
+                    output += data.toString().trim();
+                });
+
+                dockerImages.on('close', (code) => {
+                    if (code === 0 && output.includes(TEST_IMAGE)) {
+                        console.log('✅ Test image found');
+                        resolve();
+                    } else {
+                        console.log('🔨 Building test image...');
+                        const dockerBuild = spawn('docker', ['build', '-t', TEST_IMAGE, '.'], {
+                            stdio: 'inherit',
+                            timeout: 120000
+                        });
+
+                        dockerBuild.on('close', (buildCode) => {
+                            if (buildCode === 0) {
+                                console.log('✅ Test image built successfully');
+                                resolve();
+                            } else {
+                                reject(new Error(`Docker build failed: code ${buildCode}`));
+                            }
+                        });
+
+                        dockerBuild.on('error', reject);
+                    }
+                });
+
+                dockerImages.on('error', reject);
+            });
+        } catch (error) {
+            console.log('⚠️ Image check failed, proceeding with fallback build:', error.message);
+            await buildTestImage();
+        }
+
         // Check and start prerequisite services
         await checkPrerequisiteServices();
     });
