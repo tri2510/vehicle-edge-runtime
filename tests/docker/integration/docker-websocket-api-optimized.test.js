@@ -566,18 +566,17 @@ describe('Optimized Docker WebSocket API Integration Tests', () => {
     after(async () => {
         console.log('🧹 Final cleanup...');
 
-        // Clear all pending timers with a limit to prevent hanging
-        const maxTimerId = setTimeout(() => {}, 0);
-        for (let i = 1; i <= maxTimerId && i < 5000; i++) {
+        // Simplified timer clearing - just clear the most likely timer IDs
+        for (let i = 1; i <= 100; i++) {
             clearTimeout(i);
         }
 
-        // Force container cleanup with timeout
+        // Force container cleanup with shorter timeout
         try {
             await Promise.race([
                 stopContainer(),
                 new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Cleanup timeout')), 10000)
+                    setTimeout(() => reject(new Error('Cleanup timeout')), 3000)
                 )
             ]);
         } catch (error) {
