@@ -46,7 +46,7 @@ async function runTest(testFile) {
         log('----------------------------------------');
 
         const startTime = Date.now();
-        const child = spawn('node', ['--test', '--test-timeout=300000', testFile], {
+        const child = spawn('node', ['--test', '--test-timeout=180000', testFile], {
             stdio: 'inherit',
             shell: true
         });
