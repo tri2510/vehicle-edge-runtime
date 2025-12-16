@@ -5,7 +5,7 @@ import { spawn } from 'child_process';
 import http from 'node:http';
 
 describe('Optimized Docker WebSocket API Integration Tests', () => {
-    const TEST_IMAGE = 'vehicle-edge-runtime:test';
+    const TEST_IMAGE = 'vehicle-edge-runtime:test-build';
     let CONTAINER_NAME;
     let WS_PORT;
     let HEALTH_PORT;

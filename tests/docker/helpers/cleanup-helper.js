@@ -44,8 +44,51 @@ export class DockerCleanup {
             } else {
                 console.log('No test containers found to clean');
             }
+
+            // Also clean up common deployment script containers
+            await this.cleanupDeploymentContainers();
         } catch (error) {
             console.log(`⚠️ Container cleanup failed: ${error.message}`);
+        }
+    }
+
+    /**
+     * Clean up containers created by deployment scripts
+     */
+    static async cleanupDeploymentContainers() {
+        console.log('🧹 Cleaning up deployment script containers...');
+
+        const patterns = [
+            'vehicle-edge-test',
+            'vehicle-edge-runtime',
+            'vehicle-edge',
+        ];
+
+        for (const pattern of patterns) {
+            try {
+                const ps = spawn('docker', ['ps', '-a', '--filter', `name=${pattern}`, '--format', '{{.Names}}'], {
+                    stdio: 'pipe'
+                });
+
+                let containerNames = '';
+                ps.stdout.on('data', (data) => {
+                    containerNames += data.toString().trim();
+                });
+
+                await new Promise((resolve) => {
+                    ps.on('close', () => resolve());
+                    ps.on('error', () => resolve());
+                });
+
+                if (containerNames.trim()) {
+                    const containers = containerNames.split('\n').filter(name => name.trim());
+                    for (const container of containers) {
+                        await this.removeContainer(container);
+                    }
+                }
+            } catch (error) {
+                console.log(`⚠️ Deployment container cleanup failed for ${pattern}: ${error.message}`);
+            }
         }
     }
 

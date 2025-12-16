@@ -1,6 +1,4 @@
 # Test version of docker-compose.yml
-version: '3.8'
-
 services:
   vehicle-edge-runtime:
     build:
@@ -26,3 +24,8 @@ services:
       timeout: 3s
       retries: 2
       start_period: 10s
+
+networks:
+  default:
+    name: vehicle-edge-runtime_test-network
+    driver: bridge

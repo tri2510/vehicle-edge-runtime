@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import { killPorts } from '../helpers/port-helper.js';
 
 describe('Optimized Docker Container Lifecycle Tests', () => {
-    const TEST_IMAGE = 'vehicle-edge-runtime:test';
+    const TEST_IMAGE = 'vehicle-edge-runtime:test-build';
     let CONTAINER_NAME;
     let WS_PORT;
     let HEALTH_PORT;
