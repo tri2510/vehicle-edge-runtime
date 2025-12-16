@@ -7,7 +7,7 @@ import { randomBytes } from 'crypto';
 
 describe('Optimized Docker Deployment Script Tests', () => {
     const SCRIPT_PATH = './docker-deploy.sh';
-    const TEST_COMPOSE_FILE = 'docker-compose.test-optimized.yml';
+    const TEST_COMPOSE_FILE = 'docker-compose.test.yml';
     const TEST_ID = randomBytes(4).toString('hex');
     const CONTAINER_NAME = `vehicle-edge-test-opt-${TEST_ID}`;
 
@@ -39,7 +39,7 @@ describe('Optimized Docker Deployment Script Tests', () => {
     });
 
     async function createTestComposeFile() {
-        const composeContent = `# Test version of docker-compose.yml with optimized configuration
+        const composeContent = `# Test version of docker-compose.yml
 version: '3.8'
 
 services:
