@@ -182,8 +182,9 @@ describe('Optimized Docker WebSocket API Integration Tests', () => {
 
     async function stopContainer() {
         try {
+            // Force stop container immediately to avoid hanging
             await executeDockerCommand(['stop', CONTAINER_NAME]);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, 1000));
         } catch (error) {
             // Ignore stop errors
         }
@@ -195,7 +196,7 @@ describe('Optimized Docker WebSocket API Integration Tests', () => {
         }
     }
 
-    async function waitForService(timeoutMs = 45000) {
+    async function waitForService(timeoutMs = 30000) {
         const startTime = Date.now();
         const checkInterval = 3000;
         let attempts = 0;
@@ -562,11 +563,27 @@ describe('Optimized Docker WebSocket API Integration Tests', () => {
         ws.close();
     });
 
-    after(() => {
-        // Clear all pending timers to prevent timeout reference errors
+    after(async () => {
+        console.log('🧹 Final cleanup...');
+
+        // Clear all pending timers with a limit to prevent hanging
         const maxTimerId = setTimeout(() => {}, 0);
-        for (let i = 1; i <= maxTimerId; i++) {
+        for (let i = 1; i <= maxTimerId && i < 5000; i++) {
             clearTimeout(i);
         }
+
+        // Force container cleanup with timeout
+        try {
+            await Promise.race([
+                stopContainer(),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Cleanup timeout')), 10000)
+                )
+            ]);
+        } catch (error) {
+            console.log('⚠️ Cleanup timeout, but tests completed successfully');
+        }
+
+        console.log('✅ Cleanup completed');
     });
 });
