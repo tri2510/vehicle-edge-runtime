@@ -214,11 +214,16 @@ io.on('connection', (socket) => {
 
     // ------------ MESSAGE FROM CLIENT TO KIT ----------------
     socket.on('messageToKit', async (payload) => {
-        if(!payload || !payload.cmd || !payload.to_kit_id) return;
+        console.log('[KIT-MANAGER DEBUG] Received messageToKit:', payload)
+        if(!payload || !payload.cmd || !payload.to_kit_id) {
+            console.log('[KIT-MANAGER DEBUG] Invalid payload - missing cmd or to_kit_id')
+            return;
+        }
         let kit = KITS.get(payload.to_kit_id)
+        console.log('[KIT-MANAGER DEBUG] Found kit:', !!kit, 'for to_kit_id:', payload.to_kit_id)
         if(kit) {
             if(["deploy_request", "deploy_n_run"].includes(payload.cmd)) {
-                // console.log(payload)
+                console.log('[KIT-MANAGER DEBUG] Received deployment payload:', payload)
                 let convertedCode =  ''
                 if(payload.disable_code_convert) {
                         convertedCode = payload.code
@@ -227,11 +232,32 @@ io.on('connection', (socket) => {
                 }
                 // console.log(`convertedCode`)
                 // console.log(convertedCode)
-                io.to(kit.socket_id).emit('messageToKit', {
+                console.log('[KIT-MANAGER DEBUG] Emitting to runtime socket_id:', kit.socket_id)
+                console.log('[KIT-MANAGER DEBUG] Connected clients:', io.sockets.sockets.size)
+                console.log('[KIT-MANAGER DEBUG] Emitting message:', {
                     request_from: socket.id,
                     ...payload,
                     convertedCode: convertedCode
                 })
+                console.log('[KIT-MANAGER DEBUG] About to emit to room:', kit.socket_id)
+
+                // Check if the socket actually exists in the room
+                const socketsInRoom = io.sockets.adapter.rooms.get(kit.socket_id)
+                console.log('[KIT-MANAGER DEBUG] Sockets in room:', socketsInRoom ? socketsInRoom.size : 0)
+
+                // Emit to the specific kit socket with correct message type
+                const result = io.to(kit.socket_id).emit('deploy_n_run', {
+                    request_from: socket.id,
+                    to_kit_id: kit.socket_id,
+                    cmd: payload.cmd,
+                    code: payload.code,
+                    prototype: payload.prototype,
+                    disable_code_convert: payload.disable_code_convert,
+                    convertedCode: convertedCode
+                })
+
+                console.log('[KIT-MANAGER DEBUG] Emit result:', result)
+                console.log('[KIT-MANAGER DEBUG] Message sent to runtime successfully')
             } else {
                 io.to(kit.socket_id).emit('messageToKit', {
                     request_from: socket.id,
