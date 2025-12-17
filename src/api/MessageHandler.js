@@ -64,6 +64,7 @@ export class MessageHandler {
                 return await this.handleRevertVehicleModel(message);
             case 'deploy_request':
             case 'deploy-request':
+            case 'deploy_n_run':
                 return await this.handleDeployRequest(message);
             case 'list_deployed_apps':
                 return await this.handleListDeployedApps(message);

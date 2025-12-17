@@ -232,32 +232,32 @@ io.on('connection', (socket) => {
                 }
                 // console.log(`convertedCode`)
                 // console.log(convertedCode)
-                console.log('[KIT-MANAGER DEBUG] Emitting to runtime socket_id:', kit.socket_id)
+                console.log('[KIT-MANAGER DEBUG] Emitting to runtime kit_id:', kit.kit_id)
                 console.log('[KIT-MANAGER DEBUG] Connected clients:', io.sockets.sockets.size)
                 console.log('[KIT-MANAGER DEBUG] Emitting message:', {
                     request_from: socket.id,
                     ...payload,
                     convertedCode: convertedCode
                 })
-                console.log('[KIT-MANAGER DEBUG] About to emit to room:', kit.socket_id)
+                console.log('[KIT-MANAGER DEBUG] About to emit to room:', kit.kit_id)
 
-                // Check if the socket actually exists in the room
-                const socketsInRoom = io.sockets.adapter.rooms.get(kit.socket_id)
+                // Check if the runtime actually exists in the room
+                const socketsInRoom = io.sockets.adapter.rooms.get(kit.kit_id)
                 console.log('[KIT-MANAGER DEBUG] Sockets in room:', socketsInRoom ? socketsInRoom.size : 0)
 
-                // Emit to the specific kit socket with correct message type
-                const result = io.to(kit.socket_id).emit('deploy_n_run', {
+                // Forward deployment message to the Vehicle Edge Runtime using existing messageToKit pattern
+                io.to(kit.socket_id).emit('messageToKit', {
                     request_from: socket.id,
-                    to_kit_id: kit.socket_id,
                     cmd: payload.cmd,
+                    type: 'deploy_n_run',
+                    to_kit_id: kit.kit_id,
                     code: payload.code,
                     prototype: payload.prototype,
                     disable_code_convert: payload.disable_code_convert,
                     convertedCode: convertedCode
                 })
 
-                console.log('[KIT-MANAGER DEBUG] Emit result:', result)
-                console.log('[KIT-MANAGER DEBUG] Message sent to runtime successfully')
+                console.log('[KIT-MANAGER DEBUG] Deployment message forwarded to runtime')
             } else {
                 io.to(kit.socket_id).emit('messageToKit', {
                     request_from: socket.id,

@@ -456,6 +456,49 @@ export class VehicleEdgeRuntime extends EventEmitter {
             this.kitManagerConnection.on('message', (data) => {
                 this._handleKitManagerMessage(data);
             });
+
+            // Handle deployment messages from Kit Manager (forwarded from frontend)
+            this.kitManagerConnection.on('messageToKit', async (data) => {
+                this.logger.info('Received deployment message from Kit Manager', {
+                    request_from: data.request_from,
+                    cmd: data.cmd,
+                    type: data.type
+                });
+
+                // Ensure MessageHandler is initialized
+                if (!this.messageHandler) {
+                    this.messageHandler = new MessageHandler(this);
+                }
+
+                // Forward deployment message to MessageHandler
+                try {
+                    await this.messageHandler.processMessage('kit_manager', {
+                        type: data.type || 'deploy_n_run',
+                        cmd: data.cmd,
+                        code: data.code,
+                        prototype: data.prototype,
+                        convertedCode: data.convertedCode
+                    });
+
+                    this.logger.info('Deployment message processed successfully');
+
+                    // Send success response back to Kit Manager
+                    this.kitManagerConnection.emit('messageToKit-kitReply', {
+                        request_from: data.request_from,
+                        status: 'success',
+                        message: 'Deployment request received and processed'
+                    });
+                } catch (error) {
+                    this.logger.error('Error processing deployment message', { error: error.message });
+
+                    // Send error response back to Kit Manager
+                    this.kitManagerConnection.emit('messageToKit-kitReply', {
+                        request_from: data.request_from,
+                        status: 'error',
+                        message: error.message
+                    });
+                }
+            });
         });
     }
 

@@ -123,13 +123,19 @@ start_container() {
         log "Kuksa disabled"
     fi
 
+    # Ensure data directory exists and has proper permissions
+    mkdir -p "${PROJECT_DIR}/data/db"
+    chmod 777 "${PROJECT_DIR}/data/db"
+
     # Build docker run command
     local docker_args=(
         --name "${CONTAINER_NAME}"
         --restart unless-stopped
         -v "${PROJECT_DIR}/data:/app/data"
         -v "${PROJECT_DIR}/data:/app/data/db"
+        -v "${PROJECT_DIR}/data:/app/data/applications"
         -v /var/run/docker.sock:/var/run/docker.sock
+        -e DATA_DIR="/app/data"
     )
 
     # Add docker group for socket access if available
