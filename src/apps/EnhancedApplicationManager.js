@@ -1757,6 +1757,170 @@ export class EnhancedApplicationManager {
     }
 
     /**
+     * Get all deployed applications regardless of status (running, paused, stopped)
+     * This provides full lifecycle visibility for frontend management UI
+     * @returns {Array} Array of application objects with current status
+     */
+    async getAllDeployedApplications() {
+        const allApps = [];
+        const processedApps = new Set(); // Track to avoid duplicates
+
+        // Get all applications from database regardless of status
+        if (this.db) {
+            try {
+                // Get all apps without status filter
+                const dbApps = await this.db.listApplications();
+
+                for (const app of dbApps) {
+                    try {
+                        // Skip if already processed (avoid duplicates)
+                        if (processedApps.has(app.id)) {
+                            continue;
+                        }
+                        processedApps.add(app.id);
+
+                        // Get runtime state for this app
+                        const runtimeState = await this.db.getRuntimeState(app.id);
+
+                        // Determine current status from runtime state, falling back to app status
+                        let currentStatus = app.status;
+                        let executionId = runtimeState?.execution_id;
+                        let containerId = runtimeState?.container_id;
+
+                        // If we have runtime state, use the current_state from there
+                        if (runtimeState && runtimeState.current_state) {
+                            currentStatus = runtimeState.current_state;
+                        }
+
+                        // Look for execution in memory cache to get real-time container info
+                        let appInfo = null;
+                        for (const [memExecutionId, memAppInfo] of this.applications) {
+                            if (memAppInfo.appId === app.id) {
+                                appInfo = memAppInfo;
+                                executionId = memExecutionId;
+                                break;
+                            }
+                        }
+
+                        // If we have container info (from memory or database), verify real-time status
+                        if (appInfo?.container || containerId) {
+                            try {
+                                const container = appInfo?.container || this.docker.getContainer(containerId);
+                                const containerInfo = await container.inspect();
+
+                                // Map Docker status to our app status
+                                let realTimeStatus = currentStatus;
+                                if (containerInfo.State.Status === 'running') {
+                                    realTimeStatus = 'running';
+                                } else if (containerInfo.State.Status === 'paused') {
+                                    realTimeStatus = 'paused';
+                                } else if (containerInfo.State.Status === 'exited') {
+                                    const exitCode = containerInfo.State.ExitCode;
+                                    realTimeStatus = exitCode !== 0 ? 'error' : 'stopped';
+                                }
+
+                                // Update status if it changed
+                                if (realTimeStatus !== currentStatus) {
+                                    currentStatus = realTimeStatus;
+                                    // Update database with current status
+                                    await this.db.updateRuntimeState(app.id, {
+                                        current_state: currentStatus,
+                                        exit_code: containerInfo.State.ExitCode
+                                    });
+                                    await this.db.updateApplication(app.id, { status: currentStatus });
+                                }
+                            } catch (containerError) {
+                                this.logger.debug('Container not accessible, using database status', {
+                                    appId: app.id,
+                                    error: containerError.message
+                                });
+                                // If container is not accessible and status is 'running', update to 'error'
+                                if (currentStatus === 'running') {
+                                    currentStatus = 'error';
+                                    await this.db.updateRuntimeState(app.id, {
+                                        current_state: 'error',
+                                        exit_code: -1
+                                    });
+                                    await this.db.updateApplication(app.id, { status: 'error' });
+                                }
+                            }
+                        }
+
+                        // Add application to list with comprehensive info
+                        allApps.push({
+                            executionId: executionId || app.id, // Fallback to app.id if no executionId
+                            appId: app.id,
+                            name: app.name,
+                            status: currentStatus,
+                            type: app.type,
+                            startTime: app.last_start,
+                            deployTime: app.created_at,
+                            description: app.description,
+                            version: app.version,
+                            // Include container info if available
+                            containerId: containerId,
+                            // Include runtime state info
+                            pid: runtimeState?.pid,
+                            lastHeartbeat: runtimeState?.last_heartbeat,
+                            exitCode: runtimeState?.exit_code,
+                            // Include resources if available
+                            resources: runtimeState?.resources || null
+                        });
+
+                    } catch (appError) {
+                        this.logger.warn('Error processing application for listing', {
+                            appId: app.id,
+                            error: appError.message
+                        });
+                        // Still include the app with error status
+                        allApps.push({
+                            executionId: app.id,
+                            appId: app.id,
+                            name: app.name,
+                            status: 'error',
+                            type: app.type,
+                            startTime: app.last_start,
+                            deployTime: app.created_at,
+                            error: appError.message
+                        });
+                    }
+                }
+
+            } catch (dbError) {
+                this.logger.error('Failed to get applications from database', { error: dbError.message });
+                // Fallback to memory cache only
+                for (const [executionId, appInfo] of this.applications) {
+                    if (!processedApps.has(appInfo.appId)) {
+                        allApps.push({
+                            executionId: executionId,
+                            appId: appInfo.appId,
+                            name: appInfo.name,
+                            status: appInfo.status,
+                            type: appInfo.type,
+                            startTime: appInfo.startTime,
+                            deployTime: appInfo.startTime
+                        });
+                        processedApps.add(appInfo.appId);
+                    }
+                }
+            }
+        }
+
+        // Sort by deploy time (most recent first)
+        allApps.sort((a, b) => new Date(b.deployTime) - new Date(a.deployTime));
+
+        this.logger.info('Retrieved all deployed applications', {
+            total: allApps.length,
+            running: allApps.filter(app => app.status === 'running').length,
+            paused: allApps.filter(app => app.status === 'paused').length,
+            stopped: allApps.filter(app => app.status === 'stopped').length,
+            error: allApps.filter(app => app.status === 'error').length
+        });
+
+        return allApps;
+    }
+
+    /**
      * Resolve application ID from execution ID or return the original if it's already an appId
      * This handles the case where frontend sends executionId as appId for management operations
      * @param {string} id - The ID that could be either executionId or appId

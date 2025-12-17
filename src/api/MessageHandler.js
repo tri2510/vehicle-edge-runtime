@@ -763,32 +763,56 @@ export class MessageHandler {
         this.logger.info('Listing deployed applications');
 
         try {
-            const runningApps = await this.runtime.appManager.getRunningApplications();
+            // Get all deployed applications regardless of status (running, paused, stopped)
+            const allApps = await this.runtime.appManager.getAllDeployedApplications();
 
-            // Ensure we always have an array, even if no apps are running
-            const appsArray = Array.isArray(runningApps) ? runningApps : [];
+            // Ensure we always have an array, even if no apps are deployed
+            const appsArray = Array.isArray(allApps) ? allApps : [];
 
-            // Format for frontend compatibility
+            // Format for frontend compatibility with enhanced lifecycle information
             const apps = appsArray.map(app => ({
                 app_id: app.executionId,
                 name: app.name || app.appId, // Use proper app name, fallback to appId
-                version: '1.0.0',
+                version: app.version || '1.0.0',
                 status: app.status,
                 deploy_time: app.startTime || app.deployTime,
                 auto_start: true,
-                resources: {
+                description: app.description || '',
+                type: app.type || 'python',
+                // Enhanced resource information
+                resources: app.resources || {
                     cpu_limit: '50%',
                     memory_limit: '512MB'
-                }
+                },
+                // Additional lifecycle information
+                container_id: app.containerId || null,
+                pid: app.pid || null,
+                last_heartbeat: app.lastHeartbeat || null,
+                exit_code: app.exitCode || null
             }));
+
+            // Enhanced statistics for all lifecycle states
+            const stats = {
+                total: apps.length,
+                running: apps.filter(app => app.status === 'running').length,
+                paused: apps.filter(app => app.status === 'paused').length,
+                stopped: apps.filter(app => app.status === 'stopped').length,
+                error: apps.filter(app => app.status === 'error').length
+            };
+
+            this.logger.info('Returning all deployed applications', stats);
 
             return {
                 type: 'list_deployed_apps-response',
                 id: message.id,
                 applications: apps,
                 apps,
-                total_count: apps.length,
-                running_count: apps.filter(app => app.status === 'running').length,
+                total_count: stats.total,
+                running_count: stats.running,
+                paused_count: stats.paused,
+                stopped_count: stats.stopped,
+                error_count: stats.error,
+                stats, // Include detailed stats for frontend
                 timestamp: new Date().toISOString()
             };
 
@@ -801,6 +825,9 @@ export class MessageHandler {
                 apps: [],
                 total_count: 0,
                 running_count: 0,
+                paused_count: 0,
+                stopped_count: 0,
+                error_count: 0,
                 error: 'Failed to list deployed apps: ' + error.message,
                 timestamp: new Date().toISOString()
             };
