@@ -844,24 +844,35 @@ export class MessageHandler {
             
             switch (action) {
                 case 'start':
-                    // For simplicity, we don't support start from stopped state
-                    throw new Error('Starting stopped applications not supported');
-                    
+                    // Delegate to handleRunApp for start functionality
+                    const startResult = await this.handleRunApp({ appId: app_id, id: message.id });
+                    // Convert run_app response to manage_app response format
+                    return {
+                        type: 'manage_app-response',
+                        id: message.id,
+                        app_id,
+                        action,
+                        status: startResult.status === 'started' ? 'started' : startResult.status,
+                        message: startResult.message,
+                        executionId: startResult.executionId,
+                        timestamp: new Date().toISOString()
+                    };
+
                 case 'stop':
                     result = await this.runtime.appManager.stopApplication(app_id);
                     break;
-                    
+
                 case 'restart':
                     // Get current app info first, then stop and restart
                     // This is a simplified implementation
                     result = await this.runtime.appManager.stopApplication(app_id);
                     // In a full implementation, we would restart with saved configuration
                     break;
-                    
+
                 case 'remove':
                     result = await this.runtime.appManager.stopApplication(app_id);
                     break;
-                    
+
                 default:
                     throw new Error(`Unknown action: ${action}`);
             }
