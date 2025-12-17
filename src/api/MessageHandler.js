@@ -68,6 +68,8 @@ export class MessageHandler {
                 return await this.handleDeployRequest(message);
             case 'list_deployed_apps':
                 return await this.handleListDeployedApps(message);
+            case 'run_app':
+                return await this.handleRunApp(message);
             case 'manage_app':
                 return await this.handleManageApp(message);
             case 'check_signal_conflicts':
@@ -601,7 +603,9 @@ export class MessageHandler {
         this.logger.info('Processing deploy request', {
             appId: prototype?.id || 'unknown',
             appName: prototype?.name,
-            vehicleId
+            vehicleId,
+            deploymentMethod: 'direct_websocket',
+            messageSource: 'WebSocket_API'
         });
 
         // Define these outside try block so they're available in catch block
@@ -632,18 +636,30 @@ export class MessageHandler {
                 python_deps: JSON.stringify([]),
                 vehicle_signals: JSON.stringify([]),
                 data_path: `/tmp/app-data-${appId}`,
-                config: JSON.stringify({})
+                config: JSON.stringify({
+                    deployment_method: 'direct_websocket',
+                    deployment_source: 'WebSocket_API',
+                    vehicle_id: vehicleId || 'unknown',
+                    deployment_timestamp: new Date().toISOString()
+                })
             };
 
             // Insert application into database to satisfy foreign key constraints
             if (this.runtime.appManager && this.runtime.appManager.db) {
                 try {
                     await this.runtime.appManager.db.createApplication(appData);
-                    this.logger.info('Application inserted into database', { appId });
-                } catch (dbError) {
-                    this.logger.warn('Failed to create application in database', {
+                    this.logger.info('Application inserted into database', {
                         appId,
-                        error: dbError.message
+                        deploymentMethod: 'direct_websocket',
+                        appName: appData.name,
+                        nextStep: 'container_creation'
+                    });
+                } catch (dbError) {
+                    this.logger.error('Failed to create application in database', {
+                        appId,
+                        deploymentMethod: 'direct_websocket',
+                        error: dbError.message,
+                        impact: 'App may not appear in frontend UI'
                     });
                     // Continue with deployment even if database fails
                 }
@@ -695,6 +711,15 @@ export class MessageHandler {
                 });
             }
 
+            this.logger.info('Application deployment completed successfully', {
+                appId,
+                executionId,
+                deploymentMethod: 'direct_websocket',
+                status: result.status,
+                containerId: result.containerId,
+                frontendVisibility: 'should_appear_in_ui'
+            });
+
             return {
                 type: 'deploy_request-response',
                 id: message.id,
@@ -710,7 +735,15 @@ export class MessageHandler {
             };
 
         } catch (error) {
-            this.logger.error('Failed to deploy application', { error: error.message });
+            this.logger.error('Application deployment failed', {
+                appId,
+                executionId,
+                deploymentMethod: 'direct_websocket',
+                error: error.message,
+                errorStack: error.stack,
+                impact: 'Application will not be created',
+                troubleshooting: 'Check application code, resource limits, and database connectivity'
+            });
             return {
                 type: 'deploy_request-response',
                 id: message.id,
@@ -738,10 +771,10 @@ export class MessageHandler {
             // Format for frontend compatibility
             const apps = appsArray.map(app => ({
                 app_id: app.executionId,
-                name: app.appId,
+                name: app.name || app.appId, // Use proper app name, fallback to appId
                 version: '1.0.0',
                 status: app.status,
-                deploy_time: app.startTime,
+                deploy_time: app.startTime || app.deployTime,
                 auto_start: true,
                 resources: {
                     cpu_limit: '50%',
@@ -1114,6 +1147,78 @@ export class MessageHandler {
                 type: 'error',
                 id: message.id,
                 error: 'Failed to resume app: ' + error.message,
+                appId,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleRunApp(message) {
+        const { appId } = message;
+
+        this.logger.info('Starting application', { appId });
+
+        try {
+            // Check current application status first
+            const currentStatus = await this.runtime.appManager.getApplicationStatus(appId);
+
+            if (currentStatus === 'running') {
+                return {
+                    type: 'run_app-response',
+                    id: message.id,
+                    appId,
+                    status: 'already_running',
+                    message: 'Application is already running',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Check if the application exists in database
+            const appList = await this.runtime.appManager.listApplications({ id: appId });
+            if (appList.length === 0) {
+                throw new Error(`Application not found: ${appId}`);
+            }
+
+            const appInfo = appList[0];
+            this.logger.info('Found application in database', { appId, name: appInfo.name, type: appInfo.type });
+
+            // For the current implementation, we need to redeploy the app to "start" it
+            // This is because stopping actually removes the container
+            const deployOptions = {
+                appId: appInfo.id,
+                code: appInfo.code,
+                entryPoint: appInfo.entryPoint || 'main.py',
+                env: appInfo.env || {},
+                workingDir: appInfo.workingDir || '/app',
+                vehicleId: appInfo.vehicleId || 'default-vehicle',
+                executionId: `restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            };
+
+            let result;
+            if (appInfo.type === 'python') {
+                result = await this.runtime.appManager.runPythonApp(deployOptions);
+            } else if (appInfo.type === 'binary') {
+                result = await this.runtime.appManager.runBinaryApp(deployOptions);
+            } else {
+                throw new Error(`Unsupported application type: ${appInfo.type}`);
+            }
+
+            return {
+                type: 'run_app-response',
+                id: message.id,
+                appId,
+                status: 'started',
+                message: 'Application started successfully',
+                executionId: result.executionId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to start app', { appId, error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to start app: ' + error.message,
                 appId,
                 timestamp: new Date().toISOString()
             };

@@ -269,9 +269,33 @@ export class EnhancedApplicationManager {
             const container = await this._createPythonContainer(containerOptions);
             await container.start();
 
-            // Update runtime state (skip if not available or for integration tests)
-            // For E2E tests, completely skip database operations to avoid foreign key constraints
-            this.logger.info('Skipping database runtime state update for E2E compatibility', { appId });
+            // Update runtime state - critical for frontend management UI
+            if (this.db && this.db.updateRuntimeState) {
+                try {
+                    await this.db.updateRuntimeState(appId, {
+                        execution_id: actualExecutionId,
+                        container_id: container.id,
+                        current_state: 'running',
+                        last_heartbeat: new Date().toISOString(),
+                        resources: JSON.stringify({
+                            memory_limit: 512 * 1024 * 1024, // 512MB
+                            cpu_quota: 50000, // 50%
+                            status: 'running'
+                        })
+                    });
+                    this.logger.info('Runtime state updated successfully', {
+                        appId,
+                        executionId: actualExecutionId,
+                        containerId: container.id
+                    });
+                } catch (dbError) {
+                    this.logger.warn('Failed to update runtime state', {
+                        appId,
+                        error: dbError.message
+                    });
+                    // Continue with deployment - app will be in memory cache
+                }
+            }
 
             // Store in memory cache
             const appInfo = {
@@ -372,9 +396,33 @@ export class EnhancedApplicationManager {
             const container = await this._createBinaryContainer(containerOptions);
             await container.start();
 
-            // Update runtime state (skip if not available or for integration tests)
-            // For E2E tests, completely skip database operations to avoid foreign key constraints
-            this.logger.info('Skipping database runtime state update for E2E compatibility', { appId });
+            // Update runtime state - critical for frontend management UI
+            if (this.db && this.db.updateRuntimeState) {
+                try {
+                    await this.db.updateRuntimeState(appId, {
+                        execution_id: actualExecutionId,
+                        container_id: container.id,
+                        current_state: 'running',
+                        last_heartbeat: new Date().toISOString(),
+                        resources: JSON.stringify({
+                            memory_limit: 512 * 1024 * 1024, // 512MB
+                            cpu_quota: 50000, // 50%
+                            status: 'running'
+                        })
+                    });
+                    this.logger.info('Runtime state updated successfully', {
+                        appId,
+                        executionId: actualExecutionId,
+                        containerId: container.id
+                    });
+                } catch (dbError) {
+                    this.logger.warn('Failed to update runtime state', {
+                        appId,
+                        error: dbError.message
+                    });
+                    // Continue with deployment - app will be in memory cache
+                }
+            }
 
             // Store in memory cache
             const appInfo = {
@@ -1639,48 +1687,186 @@ export class EnhancedApplicationManager {
      */
     async getRunningApplications() {
         const runningApps = [];
-        for (const [actualExecutionId, appInfo] of this.applications) {
-            try {
-                // For containers that might have exited, check real-time status
-                let currentStatus = appInfo.status;
+        const processedApps = new Set(); // Track to avoid duplicates
 
-                if (currentStatus === 'running' && appInfo.container) {
+        // First, get applications from database - this is the source of truth for frontend UI
+        if (this.db) {
+            try {
+                const dbApps = await this.db.listApplications({ status: 'running' });
+
+                for (const app of dbApps) {
                     try {
-                        // Check container status to detect if it has exited
-                        const containerInfo = await appInfo.container.inspect();
-                        if (containerInfo.State.Status === 'exited') {
-                            const exitCode = containerInfo.State.ExitCode;
-                            currentStatus = exitCode !== 0 ? 'error' : 'stopped';
-                            appInfo.status = currentStatus;
-                            appInfo.exitCode = exitCode;
-                            appInfo.endTime = new Date().toISOString();
+                        // Get runtime state for this app
+                        const runtimeState = await this.db.getRuntimeState(app.id);
+
+                        if (runtimeState && runtimeState.current_state === 'running') {
+                            // Check if we have this in memory cache for container access
+                            let appInfo = null;
+                            let executionId = runtimeState.execution_id;
+
+                            // Look for execution in memory cache
+                            for (const [memExecutionId, memAppInfo] of this.applications) {
+                                if (memAppInfo.appId === app.id) {
+                                    appInfo = memAppInfo;
+                                    executionId = memExecutionId;
+                                    break;
+                                }
+                            }
+
+                            // If not in memory but we have container_id from DB, try to get container
+                            if (!appInfo && runtimeState.container_id) {
+                                try {
+                                    const container = this.docker.getContainer(runtimeState.container_id);
+                                    const containerInfo = await container.inspect();
+
+                                    // Only include if container is actually running
+                                    if (containerInfo.State.Status === 'running') {
+                                        appInfo = {
+                                            executionId: executionId,
+                                            appId: app.id,
+                                            name: app.name,
+                                            type: app.type,
+                                            container: container,
+                                            status: 'running',
+                                            startTime: app.last_start || app.created_at
+                                        };
+                                        // Add to memory cache for future access
+                                        this.applications.set(executionId, appInfo);
+                                    }
+                                } catch (containerError) {
+                                    this.logger.warn('Container from database not accessible', {
+                                        appId: app.id,
+                                        containerId: runtimeState.container_id,
+                                        error: containerError.message
+                                    });
+                                    // Update database to reflect actual status
+                                    await this.db.updateRuntimeState(app.id, {
+                                        current_state: 'error',
+                                        exit_code: -1
+                                    });
+                                    await this.db.updateApplication(app.id, { status: 'error' });
+                                    continue;
+                                }
+                            }
+
+                            if (appInfo) {
+                                // Check real-time container status
+                                let currentStatus = appInfo.status;
+                                if (currentStatus === 'running' && appInfo.container) {
+                                    try {
+                                        const containerInfo = await appInfo.container.inspect();
+                                        if (containerInfo.State.Status === 'exited') {
+                                            const exitCode = containerInfo.State.ExitCode;
+                                            currentStatus = exitCode !== 0 ? 'error' : 'stopped';
+
+                                            // Update database with actual status
+                                            await this.db.updateRuntimeState(app.id, {
+                                                current_state: currentStatus,
+                                                exit_code: exitCode
+                                            });
+                                            await this.db.updateApplication(app.id, { status: currentStatus });
+
+                                            // Update memory cache
+                                            appInfo.status = currentStatus;
+                                            appInfo.exitCode = exitCode;
+                                            appInfo.endTime = new Date().toISOString();
+                                        }
+                                    } catch (inspectError) {
+                                        this.logger.warn('Failed to inspect container', {
+                                            appId: app.id,
+                                            executionId: appInfo.executionId,
+                                            error: inspectError.message
+                                        });
+                                    }
+                                }
+
+                                // Only include if actually running
+                                if (currentStatus === 'running') {
+                                    runningApps.push({
+                                        executionId: appInfo.executionId,
+                                        appId: app.id,
+                                        name: app.name,
+                                        type: app.type,
+                                        status: currentStatus,
+                                        startTime: appInfo.startTime,
+                                        deployTime: app.created_at,
+                                        containerId: runtimeState.container_id,
+                                        dataSource: 'database'
+                                    });
+                                    processedApps.add(app.id);
+                                }
+                            }
                         }
-                    } catch (inspectError) {
-                        this.logger.warn('Failed to inspect container during getRunningApplications', {
-                            executionId: actualExecutionId,
-                            error: inspectError.message
+                    } catch (appError) {
+                        this.logger.warn('Failed to process app from database', {
+                            appId: app.id,
+                            error: appError.message
                         });
                     }
                 }
 
-                // Only include apps that are truly running or starting
-                if (currentStatus === 'running' || currentStatus === 'starting') {
-                    runningApps.push({
-                        executionId: actualExecutionId,
-                        appId: appInfo.appId,
-                        name: appInfo.name,
-                        type: appInfo.type,
-                        status: currentStatus,
-                        startTime: appInfo.startTime
-                    });
-                }
-            } catch (error) {
-                this.logger.warn('Failed to get status for application during getRunningApplications', {
-                    executionId: actualExecutionId,
-                    error: error.message
+                this.logger.info('Retrieved applications from database', {
+                    totalFromDB: dbApps.length,
+                    runningCount: runningApps.length
+                });
+
+            } catch (dbError) {
+                this.logger.error('Failed to query database for running applications', {
+                    error: dbError.message
                 });
             }
         }
+
+        // Now check memory cache for any apps not yet in database (shouldn't happen with our fixes, but for safety)
+        for (const [executionId, appInfo] of this.applications) {
+            if (!processedApps.has(appInfo.appId)) {
+                try {
+                    let currentStatus = appInfo.status;
+
+                    if (currentStatus === 'running' && appInfo.container) {
+                        try {
+                            const containerInfo = await appInfo.container.inspect();
+                            if (containerInfo.State.Status === 'exited') {
+                                const exitCode = containerInfo.State.ExitCode;
+                                currentStatus = exitCode !== 0 ? 'error' : 'stopped';
+                                appInfo.status = currentStatus;
+                                appInfo.exitCode = exitCode;
+                                appInfo.endTime = new Date().toISOString();
+                            }
+                        } catch (inspectError) {
+                            this.logger.warn('Failed to inspect container during memory cache check', {
+                                executionId: executionId,
+                                error: inspectError.message
+                            });
+                        }
+                    }
+
+                    if (currentStatus === 'running' || currentStatus === 'starting') {
+                        runningApps.push({
+                            executionId: executionId,
+                            appId: appInfo.appId,
+                            name: appInfo.name || `App ${appInfo.appId}`,
+                            type: appInfo.type,
+                            status: currentStatus,
+                            startTime: appInfo.startTime,
+                            dataSource: 'memory_cache'
+                        });
+                    }
+                } catch (error) {
+                    this.logger.warn('Failed to get status for application from memory cache', {
+                        executionId: executionId,
+                        error: error.message
+                    });
+                }
+            }
+        }
+
+        this.logger.info('Final running applications list compiled', {
+            totalCount: runningApps.length,
+            fromDatabase: runningApps.filter(app => app.dataSource === 'database').length,
+            fromMemory: runningApps.filter(app => app.dataSource === 'memory_cache').length
+        });
+
         return runningApps;
     }
 }
