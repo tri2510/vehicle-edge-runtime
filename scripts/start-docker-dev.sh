@@ -131,6 +131,14 @@ start_container() {
         -v /var/run/docker.sock:/var/run/docker.sock
     )
 
+    # Add docker group for socket access if available
+    if getent group docker >/dev/null 2>&1; then
+        docker_args+=(--group-add $(getent group docker | cut -d: -f3))
+        log "Adding docker group for socket access"
+    else
+        log "Docker group not found, container will run with basic socket access"
+    fi
+
     # Use host network when Kit Manager is enabled for easier connectivity
     if [ "$ENABLE_KIT_MANAGER" = "true" ]; then
         docker_args+=(--network=host)

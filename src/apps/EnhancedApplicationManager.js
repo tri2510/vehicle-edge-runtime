@@ -281,7 +281,7 @@ export class EnhancedApplicationManager {
                 container,
                 status: 'running',
                 startTime: new Date().toISOString(),
-                appDir: app.data_path
+                appDir: app.data_path || containerOptions.appDir || `/app/applications/${appId}`
             };
             this.applications.set(actualExecutionId, appInfo);
 
@@ -342,10 +342,10 @@ export class EnhancedApplicationManager {
             let containerOptions = {
                 executionId: actualExecutionId,
                 appId,
-                appDir: app.data_path,
-                binaryPath: app.binary_path,
-                args: args || app.args,
-                env: { ...app.env, ...env },
+                appDir: app.data_path || `/app/applications/${appId}`,
+                binaryPath: app.binary_path || `/app/applications/${appId}/main`,
+                args: args || app.args || [],
+                env: { ...app.env, ...env } || {},
                 workingDir: workingDir || `/app`
             };
 
@@ -384,7 +384,7 @@ export class EnhancedApplicationManager {
                 container,
                 status: 'running',
                 startTime: new Date().toISOString(),
-                appDir: app.data_path
+                appDir: app.data_path || containerOptions.appDir || `/app/applications/${appId}`
             };
             this.applications.set(actualExecutionId, appInfo);
 
