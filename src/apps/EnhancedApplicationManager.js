@@ -839,7 +839,7 @@ export class EnhancedApplicationManager {
 
     async _createPythonContainer(options) {
         const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
-const actualExecutionId = executionId || uuidv4();
+        const actualExecutionId = executionId || uuidv4();
 
         if (!appDir) {
             throw new Error('Application directory path is required for container creation');
@@ -851,21 +851,31 @@ const actualExecutionId = executionId || uuidv4();
 
         const sanitizedId = executionId.replace(/-/g, '');
 
+        // Read the Python file content to avoid Docker-in-Docker volume mounting issues
+        let pythonCode = '';
+        try {
+            const fs = await import('fs/promises');
+            pythonCode = await fs.readFile(path.join(appDir, entryPoint), 'utf8');
+        } catch (error) {
+            throw new Error(`Failed to read Python file: ${error.message}`);
+        }
+
+        // Create container with inline Python code execution
         const containerConfig = {
             Image: 'python:3.11-slim',
-            WorkingDir: workingDir,
-            Cmd: ['python', entryPoint],
+            WorkingDir: '/tmp',
+            Cmd: ['python', '-c', pythonCode],
             Env: [
                 'PYTHONUNBUFFERED=1',
-                'PYTHONPATH=/app/dependencies:/app',
+                'PYTHONPATH=/app/dependencies:/tmp',
                 'APP_ID=' + appId,
                 'EXECUTION_ID=' + actualExecutionId,
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
+                // Only mount dependencies directory for libraries
                 Binds: [
-                    `${path.resolve(appDir)}:${workingDir}`,
-                    `${path.resolve(path.join(this.appStorage, 'dependencies', appId))}:/app/dependencies:ro`
+                    `${path.join(this.appStorage, 'dependencies', appId)}:/app/dependencies:ro`
                 ],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
@@ -889,7 +899,7 @@ const actualExecutionId = executionId || uuidv4();
 
     async _createNativePythonProcess(options) {
         const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
-const actualExecutionId = executionId || uuidv4();
+        const actualExecutionId = executionId || uuidv4();
         const { spawn } = await import('child_process');
 
         // Set up environment variables

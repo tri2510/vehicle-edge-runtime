@@ -1,10 +1,12 @@
 # Test version of docker-compose.yml
+version: '3.8'
+
 services:
   vehicle-edge-runtime:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vehicle-edge-test-923a1279
+    container_name: vehicle-edge-test-e0b581bb
     ports:
       - "13002:3002"  # Different ports for testing
       - "13003:3003"
@@ -24,8 +26,3 @@ services:
       timeout: 3s
       retries: 2
       start_period: 10s
-
-networks:
-  default:
-    name: vehicle-edge-runtime_test-network
-    driver: bridge

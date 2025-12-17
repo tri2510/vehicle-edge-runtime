@@ -64,6 +64,82 @@ app.get('/listAllClient', (req, res) => {
     })
 });
 
+// HTTP POST endpoint for messageToKit (alternative to WebSocket)
+app.post('/messageToKit', async (req, res) => {
+    console.log('[KIT-MANAGER DEBUG] Received HTTP messageToKit:', req.body)
+
+    const payload = req.body;
+    if(!payload || !payload.cmd || !payload.to_kit_id) {
+        console.log('[KIT-MANAGER DEBUG] Invalid HTTP payload - missing cmd or to_kit_id')
+        return res.status(400).json({
+            status: "Error",
+            message: "Missing cmd or to_kit_id in payload"
+        });
+    }
+
+    let kit = KITS.get(payload.to_kit_id)
+    console.log('[KIT-MANAGER DEBUG] Found kit via HTTP:', !!kit, 'for to_kit_id:', payload.to_kit_id)
+
+    if(kit) {
+        if(["deploy_request", "deploy_n_run"].includes(payload.cmd)) {
+            console.log('[KIT-MANAGER DEBUG] Received HTTP deployment payload:', payload)
+
+            let convertedCode = ''
+            if(payload.disable_code_convert) {
+                convertedCode = payload.code
+            } else {
+                convertedCode = await convertPgCode(payload.prototype?.name || 'App', payload.code || '')
+            }
+
+            console.log('[KIT-MANAGER DEBUG] HTTP Emitting to runtime socket_id:', kit.socket_id)
+            console.log('[KIT-MANAGER DEBUG] HTTP Connected clients:', io.sockets.sockets.size)
+
+            const messagePayload = {
+                request_from: 'HTTP_API',
+                ...payload,
+                convertedCode: convertedCode
+            }
+
+            console.log('[KIT-MANAGER DEBUG] HTTP About to emit to room:', kit.kit_id)
+
+            // Check if the runtime actually exists in the room
+            const socketsInRoom = io.sockets.adapter.rooms.get(kit.kit_id)
+            console.log('[KIT-MANAGER DEBUG] HTTP Sockets in room:', socketsInRoom ? socketsInRoom.size : 0)
+
+            // Forward deployment message to the Vehicle Edge Runtime
+            const result = io.to(kit.socket_id).emit('messageToKit', messagePayload)
+
+            console.log('[KIT-MANAGER DEBUG] HTTP Emit result:', result)
+            console.log('[KIT-MANAGER DEBUG] HTTP Message sent to runtime successfully')
+
+            return res.json({
+                status: "OK",
+                message: "Deployment message sent to runtime",
+                kit_id: payload.to_kit_id,
+                socket_id: kit.socket_id
+            })
+        } else {
+            // Handle other message types
+            io.to(kit.socket_id).emit('messageToKit', {
+                request_from: 'HTTP_API',
+                ...payload
+            })
+
+            return res.json({
+                status: "OK",
+                message: "Message sent to runtime",
+                kit_id: payload.to_kit_id
+            })
+        }
+    } else {
+        return res.status(404).json({
+            status: "Error",
+            message: "Kit not found",
+            to_kit_id: payload.to_kit_id
+        })
+    }
+});
+
 app.post('/convertCode', async (req, res) => {
     if(!req.body.code) {
         return res.json({
