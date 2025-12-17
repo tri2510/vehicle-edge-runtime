@@ -624,7 +624,7 @@ export class MessageHandler {
                 updated_at: new Date().toISOString(),
                 // Required database fields
                 entry_point: 'main.py',
-                binary_path: null,
+                binary_path: `/tmp/app-data-${appId}/main`,
                 args: JSON.stringify([]),
                 env: JSON.stringify({}),
                 working_dir: '/app',

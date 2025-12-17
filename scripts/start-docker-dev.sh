@@ -128,6 +128,7 @@ start_container() {
         --name "${CONTAINER_NAME}"
         --restart unless-stopped
         -v "${PROJECT_DIR}/data:/app/data"
+        -v "${PROJECT_DIR}/data:/app/data/db"
         -v /var/run/docker.sock:/var/run/docker.sock
     )
 
