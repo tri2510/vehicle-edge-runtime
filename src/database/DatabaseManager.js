@@ -329,6 +329,17 @@ export class DatabaseManager {
         return state;
     }
 
+    async getRuntimeStateByExecutionId(executionId) {
+        const state = await this.db.get('SELECT * FROM app_runtime_state WHERE execution_id = ?', [executionId]);
+        if (!state) return null;
+
+        if (state.resources) {
+            state.resources = JSON.parse(state.resources);
+        }
+
+        return state;
+    }
+
     // Logging methods
     async addLog(appId, stream, content, level = 'info', executionId = null) {
         const stmt = await this.db.prepare(`

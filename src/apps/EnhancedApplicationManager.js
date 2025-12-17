@@ -132,48 +132,7 @@ export class EnhancedApplicationManager {
         }
     }
 
-    async uninstallApplication(appId) {
-        this.logger.info('Uninstalling application', { appId });
-
-        try {
-            const app = await this.db.getApplication(appId);
-            if (!app) {
-                throw new Error(`Application not found: ${appId}`);
-            }
-
-            // Stop application if running
-            const runtimeState = await this.db.getRuntimeState(appId);
-            if (runtimeState && runtimeState.current_state === 'running') {
-                await this._stopContainer(appId, runtimeState.container_id);
-            }
-
-            // Update status to uninstalling
-            await this.db.updateApplication(appId, { status: 'uninstalling' });
-            await this.db.addLog(appId, 'status', 'Application uninstallation started', 'info');
-
-            // Clean up container
-            if (runtimeState?.container_id) {
-                await this._removeContainer(runtimeState.container_id);
-            }
-
-            // Clean up application directory
-            if (app.data_path && await fs.pathExists(app.data_path)) {
-                await fs.remove(app.data_path);
-            }
-
-            // Remove from database
-            await this.db.deleteApplication(appId);
-
-            this.logger.info('Application uninstalled successfully', { appId });
-
-            return { status: 'uninstalled', appId };
-
-        } catch (error) {
-            this.logger.error('Application uninstallation failed', { appId, error: error.message });
-            throw error;
-        }
-    }
-
+    
     async runPythonApp(options) {
         const { appId, env, workingDir, vehicleId, executionId, code } = options;
 
@@ -464,37 +423,7 @@ export class EnhancedApplicationManager {
         }
     }
 
-    async pauseApplication(appId) {
-        this.logger.info('Pausing application', { appId });
-
-        try {
-            const runtimeState = await this.db.getRuntimeState(appId);
-            if (!runtimeState || runtimeState.current_state !== 'running') {
-                throw new Error(`Application not running: ${appId}`);
-            }
-
-            // Pause the container
-            await this._pauseContainer(runtimeState.container_id);
-
-            // Update runtime state
-            await this.db.updateRuntimeState(appId, {
-                current_state: 'paused'
-            });
-
-            // Update application status
-            await this.db.updateApplication(appId, { status: 'paused' });
-            await this.db.addLog(appId, 'status', 'Application paused', 'info');
-
-            this.logger.info('Application paused successfully', { appId });
-
-            return { status: 'paused', appId };
-
-        } catch (error) {
-            this.logger.error('Failed to pause application', { appId, error: error.message });
-            throw error;
-        }
-    }
-
+    
     async resumeApplication(appId) {
         this.logger.info('Resuming application', { appId });
 
@@ -527,50 +456,7 @@ export class EnhancedApplicationManager {
         }
     }
 
-    async stopApplication(appId) {
-        this.logger.info('Stopping application', { appId });
-
-        try {
-            const runtimeState = await this.db.getRuntimeState(appId);
-            if (!runtimeState) {
-                throw new Error(`Application not found: ${appId}`);
-            }
-
-            // If application is already stopped, return the stored exit code
-            if (runtimeState.current_state === 'stopped') {
-                const exitCode = runtimeState.exit_code || 0;
-                this.logger.info('Application already stopped', { appId, exitCode });
-                return { status: 'stopped', appId, exitCode };
-            }
-
-            // If application is not running or paused, it's in an invalid state
-            if (runtimeState.current_state !== 'running' && runtimeState.current_state !== 'paused') {
-                throw new Error(`Application not running or paused: ${appId}`);
-            }
-
-            // Stop the container
-            const exitCode = await this._stopContainer(appId, runtimeState.container_id);
-
-            // Update runtime state
-            await this.db.updateRuntimeState(appId, {
-                current_state: 'stopped',
-                exit_code: exitCode
-            });
-
-            // Update application status
-            await this.db.updateApplication(appId, { status: 'stopped' });
-            await this.db.addLog(appId, 'status', `Application stopped with exit code: ${exitCode}`, 'info');
-
-            this.logger.info('Application stopped successfully', { appId, exitCode });
-
-            return { status: 'stopped', appId, exitCode };
-
-        } catch (error) {
-            this.logger.error('Failed to stop application', { appId, error: error.message });
-            throw error;
-        }
-    }
-
+    
     async getApplicationStatus(appId) {
         try {
             let app = null;
@@ -1868,5 +1754,251 @@ export class EnhancedApplicationManager {
         });
 
         return runningApps;
+    }
+
+    /**
+     * Resolve application ID from execution ID or return the original if it's already an appId
+     * This handles the case where frontend sends executionId as appId for management operations
+     * @param {string} id - The ID that could be either executionId or appId
+     * @returns {string|null} The resolved appId or null if not found
+     */
+    async resolveAppId(id) {
+        try {
+            // First, try to find as executionId in memory cache
+            for (const [executionId, appInfo] of this.applications) {
+                if (executionId === id && appInfo.appId) {
+                    this.logger.debug('Resolved appId from executionId in memory', {
+                        executionId: id,
+                        resolvedAppId: appInfo.appId
+                    });
+                    return appInfo.appId;
+                }
+            }
+
+            // If not found in memory, check database
+            if (this.db) {
+                try {
+                    // Look for runtime state with this executionId
+                    const runtimeState = await this.db.getRuntimeStateByExecutionId(id);
+                    if (runtimeState && runtimeState.app_id) {
+                        this.logger.debug('Resolved appId from database via executionId', {
+                            executionId: id,
+                            resolvedAppId: runtimeState.app_id
+                        });
+                        return runtimeState.app_id;
+                    }
+
+                    // Check if the ID itself is a valid appId
+                    const appList = await this.db.listApplications({ id: id });
+                    if (appList.length > 0) {
+                        this.logger.debug('ID is already a valid appId', { appId: id });
+                        return id;
+                    }
+                } catch (dbError) {
+                    this.logger.warn('Failed to resolve appId from database', {
+                        id,
+                        error: dbError.message
+                    });
+                }
+            }
+
+            // If we get here, we couldn't resolve the appId
+            this.logger.warn('Could not resolve appId from provided ID', { id });
+            return null;
+
+        } catch (error) {
+            this.logger.error('Error resolving appId', { id, error: error.message });
+            return null;
+        }
+    }
+
+    /**
+     * Enhanced stopApplication that handles both executionId and appId
+     * @param {string} appId - The ID that could be either executionId or appId
+     * @returns {Object} Result of the stop operation
+     */
+    async stopApplication(appId) {
+        this.logger.info('Stopping application', { providedId: appId });
+
+        // Resolve the actual appId
+        const resolvedAppId = await this.resolveAppId(appId);
+        if (!resolvedAppId) {
+            throw new Error(`Application not found: ${appId}`);
+        }
+
+        this.logger.info('Resolved application ID for stop operation', {
+            providedId: appId,
+            resolvedAppId
+        });
+
+        // Find and stop the application using the resolved appId
+        let stopped = false;
+        const executionIdsToRemove = [];
+
+        for (const [executionId, appInfo] of this.applications) {
+            if (appInfo.appId === resolvedAppId) {
+                try {
+                    this.logger.info('Stopping application container', {
+                        executionId,
+                        appId: resolvedAppId
+                    });
+
+                    await appInfo.container.stop({ t: 10 });
+                    await appInfo.container.remove();
+
+                    executionIdsToRemove.push(executionId);
+                    stopped = true;
+
+                    // Update database status
+                    if (this.db) {
+                        try {
+                            await this.db.updateApplication(resolvedAppId, {
+                                status: 'stopped',
+                                last_stop: new Date().toISOString()
+                            });
+                            await this.db.updateRuntimeState(resolvedAppId, {
+                                current_state: 'stopped',
+                                exit_code: 0
+                            });
+                        } catch (dbError) {
+                            this.logger.warn('Failed to update database on stop', {
+                                appId: resolvedAppId,
+                                error: dbError.message
+                            });
+                        }
+                    }
+
+                    // Remove from memory cache
+                    this.applications.delete(executionId);
+
+                } catch (containerError) {
+                    this.logger.error('Failed to stop container', {
+                        executionId,
+                        appId: resolvedAppId,
+                        error: containerError.message
+                    });
+                }
+            }
+        }
+
+        if (stopped) {
+            return {
+                appId: resolvedAppId,
+                status: 'stopped',
+                message: 'Application stopped successfully'
+            };
+        } else {
+            throw new Error(`Application not running: ${resolvedAppId}`);
+        }
+    }
+
+    /**
+     * Enhanced pauseApplication that handles both executionId and appId
+     * @param {string} appId - The ID that could be either executionId or appId
+     * @returns {Object} Result of the pause operation
+     */
+    async pauseApplication(appId) {
+        this.logger.info('Pausing application', { providedId: appId });
+
+        // Resolve the actual appId
+        const resolvedAppId = await this.resolveAppId(appId);
+        if (!resolvedAppId) {
+            throw new Error(`Application not found: ${appId}`);
+        }
+
+        this.logger.info('Resolved application ID for pause operation', {
+            providedId: appId,
+            resolvedAppId
+        });
+
+        // Find and pause the application
+        for (const [executionId, appInfo] of this.applications) {
+            if (appInfo.appId === resolvedAppId && appInfo.container) {
+                try {
+                    await this._pauseContainer(appInfo.container.id);
+
+                    // Update database status
+                    if (this.db) {
+                        try {
+                            await this.db.updateApplication(resolvedAppId, { status: 'paused' });
+                            await this.db.updateRuntimeState(resolvedAppId, { current_state: 'paused' });
+                        } catch (dbError) {
+                            this.logger.warn('Failed to update database on pause', {
+                                appId: resolvedAppId,
+                                error: dbError.message
+                            });
+                        }
+                    }
+
+                    appInfo.status = 'paused';
+
+                    return {
+                        appId: resolvedAppId,
+                        status: 'paused',
+                        message: 'Application paused successfully'
+                    };
+
+                } catch (error) {
+                    this.logger.error('Failed to pause container', {
+                        executionId,
+                        appId: resolvedAppId,
+                        error: error.message
+                    });
+                    throw error;
+                }
+            }
+        }
+
+        throw new Error(`Application not running: ${resolvedAppId}`);
+    }
+
+    /**
+     * Enhanced uninstallApplication that handles both executionId and appId
+     * @param {string} appId - The ID that could be either executionId or appId
+     * @returns {Object} Result of the uninstall operation
+     */
+    async uninstallApplication(appId) {
+        this.logger.info('Uninstalling application', { providedId: appId });
+
+        // Resolve the actual appId
+        const resolvedAppId = await this.resolveAppId(appId);
+        if (!resolvedAppId) {
+            throw new Error(`Application not found: ${appId}`);
+        }
+
+        this.logger.info('Resolved application ID for uninstall operation', {
+            providedId: appId,
+            resolvedAppId
+        });
+
+        // First stop the application if it's running
+        try {
+            await this.stopApplication(resolvedAppId);
+        } catch (error) {
+            // Ignore stop errors if app wasn't running
+            this.logger.debug('App was not running during uninstall', {
+                appId: resolvedAppId,
+                error: error.message
+            });
+        }
+
+        // Remove from database
+        if (this.db) {
+            try {
+                await this.db.deleteApplication(resolvedAppId);
+                this.logger.info('Application removed from database', { appId: resolvedAppId });
+            } catch (dbError) {
+                this.logger.warn('Failed to remove from database', {
+                    appId: resolvedAppId,
+                    error: dbError.message
+                });
+            }
+        }
+
+        return {
+            appId: resolvedAppId,
+            status: 'uninstalled',
+            message: 'Application uninstalled successfully'
+        };
     }
 }
