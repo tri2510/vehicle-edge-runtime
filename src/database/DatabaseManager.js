@@ -257,6 +257,11 @@ export class DatabaseManager {
         let query = 'SELECT * FROM apps WHERE 1=1';
         const params = [];
 
+        if (filters.id) {
+            query += ' AND id = ?';
+            params.push(filters.id);
+        }
+
         if (filters.status) {
             query += ' AND status = ?';
             params.push(filters.status);
