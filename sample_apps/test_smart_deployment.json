@@ -1,0 +1,68 @@
+{
+  "test_cases": [
+    {
+      "name": "Simple Speed Display",
+      "description": "Basic KUKSA client app for speed monitoring",
+      "message": {
+        "type": "smart_deploy",
+        "id": "speed-display",
+        "name": "Speed Display Application",
+        "type": "python",
+        "code": "import asyncio\nfrom kuksa_client import KuksaClient\n\nasync def main():\n    async with KuksaClient() as client:\n        await client.subscribe(\"Vehicle.Speed\")\n        print(\"🚗 Speed monitor started\")\n        for i in range(30):\n            print(f\"Monitoring speed... {i+1}s\")\n            await asyncio.sleep(1)\n\nif __name__ == \"__main__\":\n    asyncio.run(main())",
+        "signals": ["Vehicle.Speed"],
+        "environment": "development"
+      },
+      "expected_dependencies": ["kuksa-client"],
+      "expected_signals": 1
+    },
+    {
+      "name": "Advanced Vehicle Data Logger",
+      "description": "Comprehensive vehicle data logging with pandas",
+      "message": {
+        "type": "smart_deploy",
+        "id": "vehicle-logger",
+        "name": "Advanced Vehicle Data Logger",
+        "type": "python",
+        "code": "import asyncio\nimport json\nimport time\nfrom datetime import datetime\nfrom kuksa_client import KuksaClient\n\ntry:\n    import pandas as pd\n    import numpy as np\n    has_analysis = True\nexcept ImportError:\n    has_analysis = False\n\nclass VehicleLogger:\n    def __init__(self):\n        self.data = []\n        self.signals = [\n            \"Vehicle.Speed\",\n            \"Vehicle.Powertrain.TorqueAtTransmission\",\n            \"Vehicle.Powertrain.EngineSpeed\"\n        ]\n    \n    async def log_vehicle_data(self, client):\n        print(\"📊 Starting vehicle data logging...\")\n        \n        for i in range(20):\n            # Simulate data logging\n            entry = {\n                \"timestamp\": datetime.now().isoformat(),\n                \"sample\": i + 1,\n                \"simulated_speed\": 50 + i % 30,\n                \"simulated_torque\": 150 + (i % 50)\n            }\n            self.data.append(entry)\n            \n            if has_analysis:\n                df = pd.DataFrame(self.data)\n                print(f\"📈 Samples: {len(df)}, Avg Speed: {df['simulated_speed'].mean():.1f} km/h\")\n            else:\n                print(f\"📝 Logged sample {i+1}: {entry['simulated_speed']} km/h\")\n            \n            await asyncio.sleep(1)\n        \n        print(f\"✅ Data logging complete. Total samples: {len(self.data)}\")\n        return self.data\n    \n    async def run(self):\n        try:\n            async with KuksaClient() as client:\n                return await self.log_vehicle_data(client)\n        except Exception as e:\n            print(f\"⚠️ KUKSA not available, using simulation mode: {e}\")\n            return await self.log_vehicle_data(None)\n\nasync def main():\n    logger = VehicleLogger()\n    data = await logger.run()\n    \n    # Save results\n    with open(\"/tmp/vehicle_log.json\", \"w\") as f:\n        json.dump(data, f, indent=2)\n    print(\"💾 Data saved to /tmp/vehicle_log.json\")\n\nif __name__ == \"__main__\":\n    asyncio.run(main())",
+        "signals": [
+          "Vehicle.Speed",
+          "Vehicle.Powertrain.TorqueAtTransmission",
+          "Vehicle.Powertrain.EngineSpeed"
+        ],
+        "dependencies": ["kuksa-client", "pandas", "numpy"],
+        "environment": "production"
+      },
+      "expected_dependencies": ["kuksa-client", "pandas", "numpy"],
+      "expected_signals": 3
+    },
+    {
+      "name": "Smart Deployment Test Suite",
+      "description": "Comprehensive test of all smart features",
+      "message": {
+        "type": "smart_deploy",
+        "id": "smart-test",
+        "name": "Smart Deployment Test Suite",
+        "type": "python",
+        "code": "import asyncio\nimport json\nimport logging\nfrom datetime import datetime\n\n# Test auto-detection of multiple packages\ntry:\n    import pandas as pd\n    import numpy as np\n    has_data_libs = True\nexcept ImportError:\n    has_data_libs = False\n\ntry:\n    from kuksa_client import KuksaClient\n    has_kuksa = True\nexcept ImportError:\n    has_kuksa = False\n\nimport requests\n\nlogging.basicConfig(level=logging.INFO)\nlogger = logging.getLogger(__name__)\n\nclass SmartTest:\n    def __init__(self):\n        self.test_results = {}\n    \n    def test_packages(self):\n        logger.info(\"🧪 Testing package availability...\")\n        packages = {\n            \"pandas\": has_data_libs,\n            \"numpy\": has_data_libs, \n            \"kuksa_client\": has_kuksa,\n            \"requests\": True,\n            \"json\": True,\n            \"asyncio\": True\n        }\n        \n        available = sum(packages.values())\n        total = len(packages)\n        \n        logger.info(f\"📦 {available}/{total} packages available\")\n        self.test_results[\"packages\"] = {\"available\": available, \"total\": total}\n        \n        return packages\n    \n    def test_data_processing(self):\n        logger.info(\"📊 Testing data processing...\")\n        \n        if has_data_libs:\n            # Create sample data\n            data = pd.DataFrame({\n                \"speed\": np.random.normal(60, 20, 100),\n                \"torque\": np.random.normal(150, 50, 100)\n            })\n            \n            stats = {\n                \"avg_speed\": data[\"speed\"].mean(),\n                \"max_torque\": data[\"torque\"].max(),\n                \"samples\": len(data)\n            }\n            logger.info(f\"✅ Data processing successful: {stats['samples']} samples\")\n        else:\n            stats = {\"error\": \"Data libraries not available\"}\n            logger.info(\"⚠️ Data libraries not available\")\n        \n        self.test_results[\"data_processing\"] = stats\n        return stats\n    \n    async def test_network(self):\n        logger.info(\"🌐 Testing network connectivity...\")\n        try:\n            response = requests.get(\"http://httpbin.org/get\", timeout=3)\n            success = response.status_code == 200\n            logger.info(f\"{'✅' if success else '❌'} Network test: {response.status_code}\")\n        except Exception as e:\n            success = False\n            logger.info(f\"❌ Network test failed: {e}\")\n        \n        self.test_results[\"network\"] = success\n        return success\n    \n    async def test_kuksa(self):\n        logger.info(\"🚗 Testing KUKSA connectivity...\")\n        \n        if not has_kuksa:\n            logger.info(\"⚠️ KUKSA client not available\")\n            self.test_results[\"kuksa\"] = False\n            return False\n        \n        try:\n            client = KuksaClient()\n            # Just test import - actual connection test would need running KUKSA server\n            logger.info(\"✅ KUKSA client import successful\")\n            self.test_results[\"kuksa\"] = True\n            return True\n        except Exception as e:\n            logger.info(f\"❌ KUKSA test failed: {e}\")\n            self.test_results[\"kuksa\"] = False\n            return False\n    \n    async def run_all_tests(self):\n        logger.info(\"🚀 Starting Smart Deployment Test Suite\")\n        print(\"=\" * 50)\n        print(\"Vehicle Edge Runtime - Smart Test\")\n        print(\"=\" * 50)\n        \n        # Run tests\n        packages = self.test_packages()\n        data_stats = self.test_data_processing()\n        network_ok = await self.test_network()\n        kuksa_ok = await self.test_kuksa()\n        \n        # Summary\n        print(\"\\n📋 Test Results:\")\n        print(f\"   Package Detection: {self.test_results['packages']['available']}/{self.test_results['packages']['total']} ✅\")\n        print(f\"   Data Processing: {'✅' if 'samples' in data_stats else '⚠️'}\")\n        print(f\"   Network Access: {'✅' if network_ok else '⚠️'}\")\n        print(f\"   KUKSA Support: {'✅' if kuksa_ok else '⚠️'}\")\n        \n        # Save results\n        with open(\"/tmp/smart_test_results.json\", \"w\") as f:\n            json.dump(self.test_results, f, indent=2)\n        \n        logger.info(\"💾 Test results saved to /tmp/smart_test_results.json\")\n        print(\"\\n🎉 Smart Deployment Test Complete!\")\n        \n        return self.test_results\n\nasync def main():\n    test = SmartTest()\n    results = await test.run_all_tests()\n    return results\n\nif __name__ == \"__main__\":\n    asyncio.run(main())",
+        "signals": [
+          "Vehicle.Speed",
+          "Vehicle.Powertrain.TorqueAtTransmission"
+        ],
+        "environment": "development"
+      },
+      "expected_dependencies": ["kuksa-client", "pandas", "numpy", "requests"],
+      "expected_signals": 2
+    }
+  ],
+  "usage_instructions": {
+    "websocket_url": "ws://localhost:3002/runtime",
+    "test_sequence": [
+      "1. Connect to WebSocket runtime endpoint",
+      "2. Send dependency detection message for each test",
+      "3. Send signal validation message for each test",
+      "4. Deploy each test using smart_deploy",
+      "5. Monitor deployment progress messages",
+      "6. Verify successful deployment and execution"
+    ]
+  }
+}

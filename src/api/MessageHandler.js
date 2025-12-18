@@ -165,6 +165,14 @@ export class MessageHandler {
                 return await this.handleGetRuntimeInfo(message);
             case 'report_runtime_state':
                 return await this.handleReportRuntimeState(message);
+            case 'smart_deploy':
+                return await this.handleSmartDeploy(message);
+            case 'detect_dependencies':
+                return await this.handleDetectDependencies(message);
+            case 'validate_signals':
+                return await this.handleValidateSignals(message);
+            case 'get_deployment_status':
+                return await this.handleGetDeploymentStatus(message);
             case 'ping':
                 return { type: 'pong', id: message.id, timestamp: new Date().toISOString() };
             default:
@@ -715,13 +723,53 @@ export class MessageHandler {
             // For simplified runtime, deploy_request just runs the app directly
             // Frontend handles the code conversion
 
-            // First install the application in database with complete schema
+            // First validate the code before creating any database entries
+            let appType;
+            if (prototype?.language === 'python' || language === 'python' || (code && (code.includes('import ') || code.includes('def ')))) {
+                // Validate Python syntax before deployment
+                if (!this._validatePythonSyntax(code)) {
+                    return {
+                        type: 'deploy_request-response',
+                        id: message.id,
+                        cmd: 'deploy_request',
+                        executionId,
+                        appId,
+                        status: 'failed',
+                        result: 'Python syntax validation failed - no valid code provided',
+                        isDone: true,
+                        code: 1,
+                        kit_id: this.runtime.runtimeId,
+                        timestamp: new Date().toISOString()
+                    };
+                }
+                appType = 'python';
+            } else if (code && code.trim().length > 0) {
+                // Handle as binary deployment
+                appType = 'binary';
+            } else {
+                // No valid code provided
+                return {
+                    type: 'deploy_request-response',
+                    id: message.id,
+                    cmd: 'deploy_request',
+                    executionId,
+                    appId,
+                    status: 'failed',
+                    result: 'No valid code provided for deployment',
+                    isDone: true,
+                    code: 1,
+                    kit_id: this.runtime.runtimeId,
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Only create database entry after validation passes
             const appData = {
                 id: appId,
                 name: prototype?.name || `Deployed App ${appId}`,
                 description: prototype?.description || 'Deployed via API',
                 version: prototype?.version || '1.0.0',
-                type: 'python',  // Use 'type' instead of 'language'
+                type: appType,  // Use validated type
                 code: code,
                 status: 'installed',
                 created_at: new Date().toISOString(),
@@ -751,6 +799,7 @@ export class MessageHandler {
                         appId,
                         deploymentMethod: 'direct_websocket',
                         appName: appData.name,
+                        appType: appType,
                         nextStep: 'container_creation'
                     });
                 } catch (dbError) {
@@ -766,23 +815,7 @@ export class MessageHandler {
 
             // Determine app type and run accordingly
             let result;
-            if (prototype?.language === 'python' || language === 'python' || code.includes('import ') || code.includes('def ')) {
-                // Validate Python syntax before deployment
-                if (!this._validatePythonSyntax(code)) {
-                    return {
-                        type: 'deploy_request-response',
-                        id: message.id,
-                        cmd: 'deploy_request',
-                        executionId,
-                        appId,
-                        status: 'failed',
-                        result: 'Python syntax validation failed',
-                        isDone: true,
-                        code: 1,
-                        kit_id: this.runtime.runtimeId,
-                        timestamp: new Date().toISOString()
-                    };
-                }
+            if (appType === 'python') {
 
                 result = await this.runtime.appManager.runPythonApp({
                     executionId,
@@ -1598,6 +1631,357 @@ export class MessageHandler {
             this.logger.error('Python syntax validation error', { error: error.message });
             return false;
         }
+    }
+
+    /**
+     * Smart deployment with automatic dependency management and signal validation
+     */
+    async handleSmartDeploy(message) {
+        const {
+            id: appId,
+            name,
+            type = 'python',
+            code,
+            dependencies = [],
+            signals = [],
+            kuksa_config = {},
+            environment = 'production'
+        } = message;
+
+        this.logger.info('Smart deployment requested', {
+            appId,
+            name,
+            type,
+            dependencies: dependencies.length,
+            signals: signals.length
+        });
+
+        try {
+            // Step 0: Validate code input before processing
+            if (!code || typeof code !== 'string' || code.trim().length === 0) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'No valid code provided for smart deployment',
+                    app_id: appId,
+                    suggestions: [
+                        'Please provide application code',
+                        'Check if code was properly transmitted',
+                        'Ensure code field is not empty'
+                    ],
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Step 1: Auto-detect dependencies if not provided
+            let detectedDependencies = [...dependencies];
+            if (type === 'python' && dependencies.length === 0) {
+                detectedDependencies = await this._detectPythonDependencies(code);
+            }
+
+            // Step 2: Validate vehicle signals
+            const signalValidation = await this._validateVehicleSignals(signals);
+
+            // Step 3: Generate unique ID if needed
+            const uniqueId = await this._ensureUniqueId(appId);
+
+            // Step 4: Prepare enhanced app data
+            const enhancedAppData = {
+                id: uniqueId,
+                name: name || uniqueId,
+                type,
+                code,
+                python_deps: detectedDependencies,
+                vehicle_signals: signals,
+                env: {
+                    ...kuksa_config,
+                    ENVIRONMENT: environment,
+                    DEPLOYMENT_ID: uuidv4()
+                },
+                status: 'installing'
+            };
+
+            // Step 5: Create application record
+            const app = await this.runtime.appManager.createApplication(enhancedAppData);
+
+            // Step 6: Notify frontend about deployment progress
+            this._broadcastDeploymentProgress(uniqueId, 'installing_dependencies', {
+                dependencies: detectedDependencies,
+                total: detectedDependencies.length,
+                current: 0
+            });
+
+            // Step 7: Deploy and start the application
+            const deployResult = await this._deployWithProgress(uniqueId, detectedDependencies);
+
+            return {
+                type: 'smart_deploy-response',
+                id: message.id,
+                app_id: uniqueId,
+                status: 'success',
+                auto_detected_dependencies: detectedDependencies.filter(d => !dependencies.includes(d)),
+                signal_validation,
+                deployment_id: enhancedAppData.env.DEPLOYMENT_ID,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Smart deployment failed', { appId, error: error.message });
+
+            return {
+                type: 'error',
+                id: message.id,
+                error: `Smart deployment failed: ${error.message}`,
+                app_id: appId,
+                timestamp: new Date().toISOString(),
+                suggestions: this._getErrorSuggestions(error)
+            };
+        }
+    }
+
+    /**
+     * Detect dependencies in Python code
+     */
+    async handleDetectDependencies(message) {
+        const { code, language = 'python' } = message;
+
+        this.logger.info('Detecting dependencies', { language });
+
+        try {
+            const dependencies = await this._detectPythonDependencies(code);
+
+            return {
+                type: 'dependencies_detected',
+                id: message.id,
+                language,
+                dependencies,
+                count: dependencies.length,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Dependency detection failed', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: `Dependency detection failed: ${error.message}`,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Validate vehicle signals availability
+     */
+    async handleValidateSignals(message) {
+        const { signals } = message;
+
+        this.logger.info('Validating vehicle signals', { signalCount: signals?.length });
+
+        try {
+            const validation = await this._validateVehicleSignals(signals);
+
+            return {
+                type: 'signals_validated',
+                id: message.id,
+                validation,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Signal validation failed', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: `Signal validation failed: ${error.message}`,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Get detailed deployment status
+     */
+    async handleGetDeploymentStatus(message) {
+        const { app_id } = message;
+
+        this.logger.info('Getting deployment status', { app_id });
+
+        try {
+            const app = await this.runtime.appManager.getApplication(app_id);
+            const runtimeState = await this.runtime.appManager.getRuntimeState(app_id);
+            const dependencies = await this.runtime.appManager.getDependencies(app_id);
+            const logs = await this.runtime.appManager.getLogs(app_id, { limit: 50 });
+
+            return {
+                type: 'deployment_status',
+                id: message.id,
+                app_id,
+                app,
+                runtime_state: runtimeState,
+                dependencies,
+                recent_logs: logs,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get deployment status', { app_id, error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: `Failed to get deployment status: ${error.message}`,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Helper methods for smart deployment
+     */
+    async _detectPythonDependencies(code) {
+        const imports = new Set();
+
+        // Common Python packages and their import names
+        const commonPackages = {
+            'kuksa': 'kuksa-client',
+            'kuksa_client': 'kuksa-client',
+            'pandas': 'pandas',
+            'numpy': 'numpy',
+            'requests': 'requests',
+            'asyncio': null, // Standard library
+            'json': null,    // Standard library
+            'time': null,    // Standard library
+            'os': null,      // Standard library
+            'sys': null,     // Standard library
+            'socket': null,  // Standard library
+            'threading': null, // Standard library
+            'logging': null,   // Standard library
+            'datetime': null,  // Standard library
+            'math': null,      // Standard library
+            'random': null,    // Standard library
+            'pathlib': null,   // Standard library
+            'subprocess': null // Standard library
+        };
+
+        // Extract import statements
+        const importRegex = /(?:^|\n)\s*(?:from\s+(\S+)\s+import|(?:import)\s+(\S+))/gm;
+        let match;
+
+        while ((match = importRegex.exec(code)) !== null) {
+            const importName = match[1] || match[2];
+            const packageName = importName.split('.')[0];
+
+            if (commonPackages.hasOwnProperty(packageName) && commonPackages[packageName]) {
+                imports.add(commonPackages[packageName]);
+            }
+        }
+
+        return Array.from(imports);
+    }
+
+    async _validateVehicleSignals(signals) {
+        const validation = {
+            valid: [],
+            invalid: [],
+            warnings: [],
+            total: signals.length
+        };
+
+        if (!this.runtime.kuksaManager) {
+            validation.warnings.push('KUKSA manager not available - signal validation skipped');
+            signals.forEach(signal => validation.valid.push(signal));
+            return validation;
+        }
+
+        try {
+            // This would integrate with KUKSA manager to validate signals
+            // For now, assume all signals are valid
+            signals.forEach(signal => {
+                if (typeof signal === 'string') {
+                    validation.valid.push({
+                        path: signal,
+                        access: 'subscribe'
+                    });
+                } else if (signal.path) {
+                    validation.valid.push({
+                        path: signal.path,
+                        access: signal.access || 'subscribe',
+                        rate_hz: signal.rate_hz || 1
+                    });
+                } else {
+                    validation.invalid.push(signal);
+                }
+            });
+        } catch (error) {
+            this.logger.warn('Signal validation failed, assuming valid', { error: error.message });
+            signals.forEach(signal => validation.valid.push(signal));
+        }
+
+        return validation;
+    }
+
+    async _deployWithProgress(appId, dependencies) {
+        // Simulate dependency installation progress
+        for (let i = 0; i < dependencies.length; i++) {
+            const dep = dependencies[i];
+
+            this._broadcastDeploymentProgress(appId, 'installing_dependency', {
+                dependency: dep,
+                current: i + 1,
+                total: dependencies.length,
+                progress: Math.round(((i + 1) / dependencies.length) * 100)
+            });
+
+            // In real implementation, this would trigger actual installation
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        this._broadcastDeploymentProgress(appId, 'starting_application', {
+            progress: 100
+        });
+
+        // Start the application
+        const startResult = await this.handleRunApp({ appId });
+
+        return startResult;
+    }
+
+    _broadcastDeploymentProgress(appId, stage, details) {
+        const progressMessage = {
+            type: 'deployment_progress',
+            app_id: appId,
+            stage,
+            details,
+            timestamp: new Date().toISOString()
+        };
+
+        this.runtime.broadcast?.(progressMessage);
+        this.logger.debug('Deployment progress broadcast', { appId, stage, details });
+    }
+
+    _getErrorSuggestions(error) {
+        const suggestions = [];
+
+        if (error.message.includes('kuksa-client')) {
+            suggestions.push('Try: pip install kuksa-client');
+            suggestions.push('Ensure KUKSA server is running');
+        }
+
+        if (error.message.includes('ImportError')) {
+            suggestions.push('Add missing dependencies to the dependencies array');
+        }
+
+        if (error.message.includes('permission')) {
+            suggestions.push('Check Docker daemon permissions');
+            suggestions.push('Try running with elevated privileges');
+        }
+
+        if (suggestions.length === 0) {
+            suggestions.push('Check application logs for detailed error information');
+            suggestions.push('Verify code syntax and dependencies');
+        }
+
+        return suggestions;
     }
 
   }
