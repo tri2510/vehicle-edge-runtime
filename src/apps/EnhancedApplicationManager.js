@@ -427,28 +427,48 @@ export class EnhancedApplicationManager {
     async resumeApplication(appId) {
         this.logger.info('Resuming application', { appId });
 
+        // Simplified: Direct lookup using appId as executionId
+        const appInfo = this.applications.get(appId);
+        if (!appInfo || !appInfo.container) {
+            throw new Error(`Application not found or not running: ${appId}`);
+        }
+
+        // Check if app is paused
+        if (appInfo.status !== 'paused') {
+            throw new Error(`Application not paused: ${appId}`);
+        }
+
         try {
-            const runtimeState = await this.db.getRuntimeState(appId);
-            if (!runtimeState || runtimeState.current_state !== 'paused') {
-                throw new Error(`Application not paused: ${appId}`);
-            }
-
             // Resume the container
-            await this._resumeContainer(runtimeState.container_id);
+            await this._resumeContainer(appInfo.container.id);
 
-            // Update runtime state
-            await this.db.updateRuntimeState(appId, {
-                current_state: 'running',
-                last_heartbeat: new Date().toISOString()
-            });
+            // Update application info
+            appInfo.status = 'running';
 
-            // Update application status
-            await this.db.updateApplication(appId, { status: 'running' });
-            await this.db.addLog(appId, 'status', 'Application resumed', 'info');
+            // Update database status
+            if (this.db) {
+                try {
+                    const dbAppId = appInfo.appId || appId;
+                    await this.db.updateRuntimeState(dbAppId, {
+                        current_state: 'running',
+                        last_heartbeat: new Date().toISOString()
+                    });
+                    await this.db.updateApplication(dbAppId, { status: 'running' });
+                    await this.db.addLog(dbAppId, 'status', 'Application resumed', 'info');
+                } catch (dbError) {
+                    this.logger.warn('Failed to update database on resume', {
+                        appId,
+                        error: dbError.message
+                    });
+                }
+            }
 
             this.logger.info('Application resumed successfully', { appId });
 
-            return { status: 'running', appId };
+            return {
+                status: 'running',
+                appId: appId
+            };
 
         } catch (error) {
             this.logger.error('Failed to resume application', { appId, error: error.message });
@@ -2078,58 +2098,46 @@ export class EnhancedApplicationManager {
      * @returns {Object} Result of the pause operation
      */
     async pauseApplication(appId) {
-        this.logger.info('Pausing application', { providedId: appId });
+        this.logger.info('Pausing application', { appId });
 
-        // Resolve the actual appId
-        const resolvedAppId = await this.resolveAppId(appId);
-        if (!resolvedAppId) {
-            throw new Error(`Application not found: ${appId}`);
+        // Simplified: Direct lookup using appId as executionId
+        const appInfo = this.applications.get(appId);
+        if (!appInfo || !appInfo.container) {
+            throw new Error(`Application not found or not running: ${appId}`);
         }
 
-        this.logger.info('Resolved application ID for pause operation', {
-            providedId: appId,
-            resolvedAppId
-        });
+        try {
+            await this._pauseContainer(appInfo.container.id);
 
-        // Find and pause the application
-        for (const [executionId, appInfo] of this.applications) {
-            if (appInfo.appId === resolvedAppId && appInfo.container) {
+            // Update database status
+            if (this.db) {
                 try {
-                    await this._pauseContainer(appInfo.container.id);
-
-                    // Update database status
-                    if (this.db) {
-                        try {
-                            await this.db.updateApplication(resolvedAppId, { status: 'paused' });
-                            await this.db.updateRuntimeState(resolvedAppId, { current_state: 'paused' });
-                        } catch (dbError) {
-                            this.logger.warn('Failed to update database on pause', {
-                                appId: resolvedAppId,
-                                error: dbError.message
-                            });
-                        }
-                    }
-
-                    appInfo.status = 'paused';
-
-                    return {
-                        appId: resolvedAppId,
-                        status: 'paused',
-                        message: 'Application paused successfully'
-                    };
-
-                } catch (error) {
-                    this.logger.error('Failed to pause container', {
-                        executionId,
-                        appId: resolvedAppId,
-                        error: error.message
+                    const dbAppId = appInfo.appId || appId; // Use appInfo.appId if available, fallback to executionId
+                    await this.db.updateApplication(dbAppId, { status: 'paused' });
+                    await this.db.updateRuntimeState(dbAppId, { current_state: 'paused' });
+                } catch (dbError) {
+                    this.logger.warn('Failed to update database on pause', {
+                        appId,
+                        error: dbError.message
                     });
-                    throw error;
                 }
             }
-        }
 
-        throw new Error(`Application not running: ${resolvedAppId}`);
+            appInfo.status = 'paused';
+
+            return {
+                appId: appId,
+                status: 'paused',
+                message: 'Application paused successfully'
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to pause container', {
+                appId,
+                error: error.message
+            });
+            throw error;
+        }
     }
 
     /**

@@ -12,6 +12,43 @@ export class MessageHandler {
         this.logger = new Logger('MessageHandler', runtime.options.logLevel);
     }
 
+    /**
+     * Sanitize app ID for safe use as executionId and container names
+     * @param {string} id - Original ID from frontend
+     * @returns {string} Sanitized ID safe for system use
+     */
+    _sanitizeAppId(id) {
+        if (!id || typeof id !== 'string') {
+            return uuidv4();
+        }
+
+        // Remove or replace unsafe characters
+        let sanitized = id
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, '_')  // Replace invalid chars with underscore
+            .replace(/^[^a-z0-9]/, '_')     // Ensure starts with alphanumeric
+            .replace(/[^a-z0-9]$/, '_')     // Ensure ends with alphanumeric
+            .substring(0, 63);              // Docker container name limit
+
+        // Ensure not empty after sanitization
+        if (!sanitized || sanitized === '_'.repeat(sanitized.length)) {
+            sanitized = uuidv4();
+        }
+
+        // Add random suffix if ID already exists to avoid conflicts
+        if (this.runtime.appManager?.applications) {
+            let counter = 1;
+            let uniqueId = sanitized;
+            while (this.runtime.appManager.applications.has(uniqueId)) {
+                uniqueId = `${sanitized}_${counter}`;
+                counter++;
+            }
+            sanitized = uniqueId;
+        }
+
+        return sanitized;
+    }
+
     async processMessage(clientId, message) {
         switch (message.type) {
             case 'register_kit':
@@ -608,9 +645,24 @@ export class MessageHandler {
             messageSource: 'WebSocket_API'
         });
 
-        // Define these outside try block so they're available in catch block
-        const executionId = uuidv4();
-        const appId = prototype?.id || `deploy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Simplified ID mapping: Use frontend ID as executionId directly
+        let executionId;
+        let appId;
+
+        if (prototype?.id) {
+            // Use frontend ID as executionId (simplified 1-to-1 mapping)
+            executionId = this._sanitizeAppId(prototype.id);
+            appId = executionId; // Both IDs are the same now
+            this.logger.info('Using frontend ID as executionId', {
+                frontendId: prototype.id,
+                sanitizedExecutionId: executionId
+            });
+        } else {
+            // Generate fallback ID if frontend doesn't provide one
+            executionId = uuidv4();
+            appId = executionId;
+            this.logger.info('Generated fallback executionId', { executionId });
+        }
 
         try {
             // For simplified runtime, deploy_request just runs the app directly
@@ -769,9 +821,9 @@ export class MessageHandler {
             // Ensure we always have an array, even if no apps are deployed
             const appsArray = Array.isArray(allApps) ? allApps : [];
 
-            // Format for frontend compatibility with enhanced lifecycle information
+            // Simplified: Use consistent ID mapping (executionId = appId for new apps)
             const apps = appsArray.map(app => ({
-                app_id: app.executionId,
+                app_id: app.executionId || app.id,  // Use executionId for running, fallback to appId
                 name: app.name || app.appId, // Use proper app name, fallback to appId
                 version: app.version || '1.0.0',
                 status: app.status,
@@ -1197,18 +1249,21 @@ export class MessageHandler {
         this.logger.info('Starting application', { appId });
 
         try {
-            // Check current application status first
-            const currentStatus = await this.runtime.appManager.getApplicationStatus(appId);
+            // Simplified: Check if app exists directly using appId as executionId
+            const appInfo = this.runtime.appManager?.applications?.get(appId);
 
-            if (currentStatus === 'running') {
-                return {
-                    type: 'run_app-response',
-                    id: message.id,
-                    appId,
-                    status: 'already_running',
-                    message: 'Application is already running',
-                    timestamp: new Date().toISOString()
-                };
+            if (appInfo) {
+                const currentStatus = await this.runtime.appManager.getApplicationStatus(appId);
+                if (currentStatus === 'running') {
+                    return {
+                        type: 'run_app-response',
+                        id: message.id,
+                        appId,
+                        status: 'already_running',
+                        message: 'Application is already running',
+                        timestamp: new Date().toISOString()
+                    };
+                }
             }
 
             // Check if the application exists in database
@@ -1217,28 +1272,27 @@ export class MessageHandler {
                 throw new Error(`Application not found: ${appId}`);
             }
 
-            const appInfo = appList[0];
-            this.logger.info('Found application in database', { appId, name: appInfo.name, type: appInfo.type });
+            const appData = appList[0];
+            this.logger.info('Found application in database', { appId, name: appData.name, type: appData.type });
 
-            // For the current implementation, we need to redeploy the app to "start" it
-            // This is because stopping actually removes the container
+            // Simplified: Use the same appId as executionId for restart
             const deployOptions = {
-                appId: appInfo.id,
-                code: appInfo.code,
-                entryPoint: appInfo.entryPoint || 'main.py',
-                env: appInfo.env || {},
-                workingDir: appInfo.workingDir || '/app',
-                vehicleId: appInfo.vehicleId || 'default-vehicle',
-                executionId: `restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+                appId: appId,  // Same ID for both appId and executionId
+                executionId: appId,  // Simplified 1-to-1 mapping
+                code: appData.code,
+                entryPoint: appData.entryPoint || 'main.py',
+                env: appData.env || {},
+                workingDir: appData.workingDir || '/app',
+                vehicleId: appData.vehicleId || 'default-vehicle'
             };
 
             let result;
-            if (appInfo.type === 'python') {
+            if (appData.type === 'python') {
                 result = await this.runtime.appManager.runPythonApp(deployOptions);
-            } else if (appInfo.type === 'binary') {
+            } else if (appData.type === 'binary') {
                 result = await this.runtime.appManager.runBinaryApp(deployOptions);
             } else {
-                throw new Error(`Unsupported application type: ${appInfo.type}`);
+                throw new Error(`Unsupported application type: ${appData.type}`);
             }
 
             return {
@@ -1247,7 +1301,7 @@ export class MessageHandler {
                 appId,
                 status: 'started',
                 message: 'Application started successfully',
-                executionId: result.executionId,
+                executionId: appId,  // Same ID for consistency
                 timestamp: new Date().toISOString()
             };
 
