@@ -771,6 +771,20 @@ export class EnhancedApplicationManager {
         }
     }
 
+    /**
+     * Sanitize appId for Docker container names
+     * @param {string} appId - Application ID
+     * @returns {string} Sanitized name suitable for Docker containers
+     */
+    _sanitizeAppIdForDocker(appId) {
+        return appId
+            .toLowerCase() // Docker names should be lowercase
+            .replace(/[^a-z0-9_-]/g, '-') // Replace invalid chars with hyphens
+            .replace(/-+/g, '-') // Replace multiple hyphens with single
+            .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+            .substring(0, 50); // Limit length to avoid Docker name limits
+    }
+
     async _createPythonContainer(options) {
         const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
         const actualExecutionId = executionId || uuidv4();
@@ -783,7 +797,8 @@ export class EnhancedApplicationManager {
             throw new Error('Application entry point is required for container creation');
         }
 
-        const sanitizedId = executionId.replace(/-/g, '');
+        // Sanitize appId for Docker names
+        const sanitizedName = this._sanitizeAppIdForDocker(appId);
 
         // Read the Python file content to avoid Docker-in-Docker volume mounting issues
         let pythonCode = '';
@@ -819,14 +834,14 @@ export class EnhancedApplicationManager {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
                 }
             },
-            name: `vehicle-edge-app-${sanitizedId}`,
+            name: `VEA-${sanitizedName}`,
             AttachStdout: true,
             AttachStderr: true,
             Tty: false
         };
 
         const container = await this.docker.createContainer(containerConfig);
-        this.logger.debug('Python container created', { executionId: actualExecutionId, containerId: container.id });
+        this.logger.debug('Python container created', { executionId: actualExecutionId, containerId: container.id, containerName: `VEA-${sanitizedName}` });
 
         return container;
     }
@@ -990,7 +1005,8 @@ export class EnhancedApplicationManager {
             throw new Error('Binary path is required for container creation');
         }
 
-        const sanitizedId = executionId.replace(/-/g, '');
+        // Sanitize appId for Docker names
+        const sanitizedName = this._sanitizeAppIdForDocker(appId);
 
         const containerConfig = {
             Image: 'alpine:latest',
@@ -1011,14 +1027,14 @@ export class EnhancedApplicationManager {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
                 }
             },
-            name: `vehicle-edge-app-${sanitizedId}`,
+            name: `VEA-${sanitizedName}`,
             AttachStdout: true,
             AttachStderr: true,
             Tty: false
         };
 
         const container = await this.docker.createContainer(containerConfig);
-        this.logger.debug('Binary container created', { executionId: actualExecutionId, containerId: container.id });
+        this.logger.debug('Binary container created', { executionId: actualExecutionId, containerId: container.id, containerName: `VEA-${sanitizedName}` });
 
         return container;
     }
@@ -1126,7 +1142,7 @@ export class EnhancedApplicationManager {
             const containers = await this.docker.listContainers({ all: true });
 
             for (const container of containers) {
-                if (container.Names.some(name => name.includes('/vehicle-edge-app-'))) {
+                if (container.Names.some(name => name.includes('/VEA-'))) {
                     const containerId = container.Id;
                     this.logger.debug('Found orphaned container', { containerId });
 
