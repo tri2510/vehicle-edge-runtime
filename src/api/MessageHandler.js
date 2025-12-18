@@ -35,7 +35,7 @@ export class MessageHandler {
             sanitized = uuidv4();
         }
 
-        // Add random suffix if ID already exists to avoid conflicts
+        // Add random suffix if ID already exists in memory cache
         if (this.runtime.appManager?.applications) {
             let counter = 1;
             let uniqueId = sanitized;
@@ -47,6 +47,53 @@ export class MessageHandler {
         }
 
         return sanitized;
+    }
+
+    /**
+     * Check for ID conflicts and generate unique ID if needed
+     * @param {string} proposedId - Proposed ID for the app
+     * @returns {Promise<string>} Unique ID safe for use
+     */
+    async _ensureUniqueId(proposedId) {
+        const sanitizedId = this._sanitizeAppId(proposedId);
+        let uniqueId = sanitizedId;
+        let counter = 1;
+
+        // Check database for existing apps with same ID
+        try {
+            while (true) {
+                const existingApps = await this.runtime.appManager.listApplications({ id: uniqueId });
+
+                if (existingApps.length === 0) {
+                    // No conflict found
+                    break;
+                }
+
+                this.logger.warn('App ID already exists in database, generating unique ID', {
+                    proposedId: uniqueId,
+                    existingApp: existingApps[0].name
+                });
+
+                counter++;
+                uniqueId = `${sanitizedId}_${counter}`;
+            }
+
+            if (uniqueId !== sanitizedId) {
+                this.logger.info('Generated unique ID to avoid database conflicts', {
+                    originalId: sanitizedId,
+                    uniqueId: uniqueId
+                });
+            }
+
+        } catch (error) {
+            this.logger.warn('Could not check database for ID conflicts, using sanitized ID', {
+                id: sanitizedId,
+                error: error.message
+            });
+            uniqueId = sanitizedId;
+        }
+
+        return uniqueId;
     }
 
     async processMessage(clientId, message) {
@@ -645,17 +692,17 @@ export class MessageHandler {
             messageSource: 'WebSocket_API'
         });
 
-        // Simplified ID mapping: Use frontend ID as executionId directly
+        // Simplified ID mapping: Use frontend ID as executionId directly with conflict resolution
         let executionId;
         let appId;
 
         if (prototype?.id) {
-            // Use frontend ID as executionId (simplified 1-to-1 mapping)
-            executionId = this._sanitizeAppId(prototype.id);
+            // Check for conflicts and ensure unique ID
+            executionId = await this._ensureUniqueId(prototype.id);
             appId = executionId; // Both IDs are the same now
-            this.logger.info('Using frontend ID as executionId', {
+            this.logger.info('Using unique ID for deployment', {
                 frontendId: prototype.id,
-                sanitizedExecutionId: executionId
+                finalExecutionId: executionId
             });
         } else {
             // Generate fallback ID if frontend doesn't provide one
