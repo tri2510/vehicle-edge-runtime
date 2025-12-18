@@ -860,8 +860,22 @@ export class EnhancedApplicationManager {
             Tty: false
         };
 
+        // Clean up any existing stopped container with the same name
+        const containerName = `VEA-${sanitizedName}`;
+        try {
+            const existingContainer = this.docker.getContainer(containerName);
+            const containerInfo = await existingContainer.inspect();
+            if (containerInfo.State.Status === 'exited' || containerInfo.State.Status === 'stopped') {
+                await existingContainer.remove({ force: true });
+                this.logger.info('Removed existing stopped container', { containerName, previousState: containerInfo.State.Status });
+            }
+        } catch (error) {
+            // Container doesn't exist, which is expected
+            this.logger.debug('No existing container to remove', { containerName, error: error.message });
+        }
+
         const container = await this.docker.createContainer(containerConfig);
-        this.logger.debug('Python container created', { executionId: actualExecutionId, containerId: container.id, containerName: `VEA-${sanitizedName}` });
+        this.logger.debug('Python container created', { executionId: actualExecutionId, containerId: container.id, containerName });
 
         return container;
     }
@@ -1053,8 +1067,22 @@ export class EnhancedApplicationManager {
             Tty: false
         };
 
+        // Clean up any existing stopped container with the same name
+        const containerName = `VEA-${sanitizedName}`;
+        try {
+            const existingContainer = this.docker.getContainer(containerName);
+            const containerInfo = await existingContainer.inspect();
+            if (containerInfo.State.Status === 'exited' || containerInfo.State.Status === 'stopped') {
+                await existingContainer.remove({ force: true });
+                this.logger.info('Removed existing stopped container', { containerName, previousState: containerInfo.State.Status });
+            }
+        } catch (error) {
+            // Container doesn't exist, which is expected
+            this.logger.debug('No existing container to remove', { containerName, error: error.message });
+        }
+
         const container = await this.docker.createContainer(containerConfig);
-        this.logger.debug('Binary container created', { executionId: actualExecutionId, containerId: container.id, containerName: `VEA-${sanitizedName}` });
+        this.logger.debug('Binary container created', { executionId: actualExecutionId, containerId: container.id, containerName });
 
         return container;
     }
