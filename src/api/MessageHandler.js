@@ -915,11 +915,21 @@ export class MessageHandler {
                     break;
 
                 case 'restart':
-                    // Get current app info first, then stop and restart
-                    // This is a simplified implementation
+                    // Stop the app first
                     result = await this.runtime.appManager.stopApplication(app_id);
-                    // In a full implementation, we would restart with saved configuration
-                    break;
+
+                    // Restart the app using the same logic as run_app
+                    const restartResult = await this.handleRunApp({ appId: app_id, id: message.id });
+                    return {
+                        type: 'manage_app-response',
+                        id: message.id,
+                        app_id,
+                        action,
+                        status: restartResult.status === 'started' ? 'restarted' : restartResult.status,
+                        message: restartResult.message,
+                        executionId: restartResult.executionId,
+                        timestamp: new Date().toISOString()
+                    };
 
                 case 'remove':
                     result = await this.runtime.appManager.stopApplication(app_id);
