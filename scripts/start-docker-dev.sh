@@ -124,16 +124,15 @@ start_container() {
     fi
 
     # Ensure data directory exists and has proper permissions
-    mkdir -p "${PROJECT_DIR}/data/db"
-    chmod 777 "${PROJECT_DIR}/data/db"
+    mkdir -p "${PROJECT_DIR}/data/db" "${PROJECT_DIR}/data/logs" "${PROJECT_DIR}/data/configs" "${PROJECT_DIR}/data/applications"
+    # Make data directory world-writable to allow container user to create subdirectories
+    chmod -R 777 "${PROJECT_DIR}/data" 2>/dev/null || true
 
     # Build docker run command
     local docker_args=(
         --name "${CONTAINER_NAME}"
         --restart unless-stopped
-        -v "${PROJECT_DIR}/data:/app/data"
-        -v "${PROJECT_DIR}/data:/app/data/db"
-        -v "${PROJECT_DIR}/data:/app/data/applications"
+        -v vehicle-edge-data:/app/data
         -v /var/run/docker.sock:/var/run/docker.sock
         -e DATA_DIR="/app/data"
     )
