@@ -54,6 +54,10 @@ export class ApplicationManager {
             const pythonFile = path.join(appDir, entryPoint);
             await fs.writeFile(pythonFile, code);
 
+            // Auto-detect dependencies from code
+            const detectedDeps = await this._detectPythonDependencies(code);
+            this.logger.info('Detected Python dependencies', { dependencies: detectedDeps });
+
             // Prepare container options with vehicle credentials if available
             let containerOptions = {
                 executionId,
@@ -61,7 +65,8 @@ export class ApplicationManager {
                 appDir,
                 entryPoint,
                 env: env || {},
-                workingDir
+                workingDir,
+                dependencies: detectedDeps // Add detected dependencies
             };
 
             // Inject vehicle credentials if vehicle ID is provided
@@ -328,16 +333,27 @@ export class ApplicationManager {
     }
 
     async _createPythonContainer(options) {
-        const { executionId, appId, appDir, entryPoint, env, workingDir } = options;
+        const { executionId, appId, appDir, entryPoint, env, workingDir, dependencies = [] } = options;
 
         // Sanitize appId for Docker names
         const sanitizedName = this._sanitizeAppIdForDocker(appId);
+
+        // Build command with dependency installation
+        let cmd;
+        if (dependencies && dependencies.length > 0) {
+            // Create installation script first, then run the app
+            const installCmd = `pip install ${dependencies.join(' ')}`;
+            cmd = ['sh', '-c', `${installCmd} && python ${entryPoint}`];
+            this.logger.info('Installing Python dependencies in container', { dependencies });
+        } else {
+            cmd = ['python', entryPoint];
+        }
 
         // Create container configuration
         const containerConfig = {
             Image: 'python:3.11-slim',
             WorkingDir: workingDir,
-            Cmd: ['python', entryPoint],
+            Cmd: cmd,
             Env: [
                 'PYTHONUNBUFFERED=1',
                 'APP_ID=' + appId,
@@ -361,7 +377,12 @@ export class ApplicationManager {
         };
 
         const container = await this.docker.createContainer(containerConfig);
-        this.logger.debug('Python container created', { executionId, containerId: container.id, containerName: `VEA-${sanitizedName}` });
+        this.logger.debug('Python container created', { 
+            executionId, 
+            containerId: container.id, 
+            containerName: `VEA-${sanitizedName}`,
+            dependenciesInstalled: dependencies.length
+        });
 
         return container;
     }
@@ -478,5 +499,52 @@ export class ApplicationManager {
         } catch (error) {
             this.logger.warn('Failed to list containers for cleanup', { error: error.message });
         }
+    }
+
+    /**
+     * Detect Python dependencies from code
+     * @param {string} code Python code to analyze
+     * @returns {string[]} Array of package names to install
+     */
+    async _detectPythonDependencies(code) {
+        const imports = new Set();
+
+        // Common Python packages and their import names
+        const commonPackages = {
+            'kuksa': 'kuksa-client',
+            'kuksa_client': 'kuksa-client',
+            'pandas': 'pandas',
+            'numpy': 'numpy',
+            'requests': 'requests',
+            'flask': 'flask',
+            'asyncio': null, // Standard library
+            'json': null,    // Standard library
+            'time': null,    // Standard library
+            'os': null,      // Standard library
+            'sys': null,     // Standard library
+            'socket': null,  // Standard library
+            'threading': null, // Standard library
+            'logging': null,   // Standard library
+            'datetime': null,  // Standard library
+            'math': null,      // Standard library
+            'random': null,    // Standard library
+            'pathlib': null,   // Standard library
+            'subprocess': null // Standard library
+        };
+
+        // Extract import statements
+        const importRegex = /(?:^|\n)\s*(?:from\s+(\S+)\s+import|(?:import)\s+(\S+))/gm;
+        let match;
+
+        while ((match = importRegex.exec(code)) !== null) {
+            const importName = match[1] || match[2];
+            const packageName = importName.split('.')[0];
+
+            if (commonPackages.hasOwnProperty(packageName) && commonPackages[packageName]) {
+                imports.add(commonPackages[packageName]);
+            }
+        }
+
+        return Array.from(imports);
     }
 }

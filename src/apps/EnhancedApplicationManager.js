@@ -829,11 +829,24 @@ export class EnhancedApplicationManager {
             throw new Error(`Failed to read Python file: ${error.message}`);
         }
 
+        // Auto-detect dependencies from code
+        const detectedDeps = await this._detectPythonDependencies(pythonCode);
+        this.logger.info('Detected Python dependencies', { appId, dependencies: detectedDeps });
+
+        // Build command with dependency installation
+        let cmd;
+        if (detectedDeps && detectedDeps.length > 0) {
+            // Create installation script first, then run the app
+            const installCmd = `pip install ${detectedDeps.join(' ')}`;
+            pythonCode = `${installCmd} && echo "Dependencies installed: ${detectedDeps.join(', ')}" && python -c "${pythonCode.replace(/"/g, '\\"')}"`;
+            this.logger.info('Installing Python dependencies in container', { appId, dependencies: detectedDeps });
+        }
+
         // Create container with inline Python code execution
         const containerConfig = {
             Image: 'python:3.11-slim',
             WorkingDir: '/tmp',
-            Cmd: ['python', '-c', pythonCode],
+            Cmd: ['sh', '-c', pythonCode],
             Env: [
                 'PYTHONUNBUFFERED=1',
                 'PYTHONPATH=/app/dependencies:/tmp',
@@ -2216,5 +2229,52 @@ export class EnhancedApplicationManager {
             status: 'uninstalled',
             message: 'Application uninstalled successfully'
         };
+    }
+
+    /**
+     * Detect Python dependencies from code
+     * @param {string} code Python code to analyze
+     * @returns {string[]} Array of package names to install
+     */
+    async _detectPythonDependencies(code) {
+        const imports = new Set();
+
+        // Common Python packages and their import names
+        const commonPackages = {
+            'kuksa': 'kuksa-client',
+            'kuksa_client': 'kuksa-client',
+            'pandas': 'pandas',
+            'numpy': 'numpy',
+            'requests': 'requests',
+            'flask': 'flask',
+            'asyncio': null, // Standard library
+            'json': null,    // Standard library
+            'time': null,    // Standard library
+            'os': null,      // Standard library
+            'sys': null,     // Standard library
+            'socket': null,  // Standard library
+            'threading': null, // Standard library
+            'logging': null,   // Standard library
+            'datetime': null,  // Standard library
+            'math': null,      // Standard library
+            'random': null,    // Standard library
+            'pathlib': null,   // Standard library
+            'subprocess': null // Standard library
+        };
+
+        // Extract import statements
+        const importRegex = /(?:^|\n)\s*(?:from\s+(\S+)\s+import|(?:import)\s+(\S+))/gm;
+        let match;
+
+        while ((match = importRegex.exec(code)) !== null) {
+            const importName = match[1] || match[2];
+            const packageName = importName.split('.')[0];
+
+            if (commonPackages.hasOwnProperty(packageName) && commonPackages[packageName]) {
+                imports.add(commonPackages[packageName]);
+            }
+        }
+
+        return Array.from(imports);
     }
 }
