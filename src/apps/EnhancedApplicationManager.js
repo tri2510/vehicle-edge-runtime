@@ -71,12 +71,13 @@ export class EnhancedApplicationManager {
             if (existingApp) {
                 // Update existing application status to installing
                 await this.db.updateApplication(id, { status: 'installing' });
+                await this.db.addLog(id, 'status', 'Application installation started', 'info');
             } else {
                 // Create new application with installing status
                 appData.status = 'installing';
                 await this.db.createApplication(appData);
+                await this.db.addLog(id, 'status', 'Application installation started', 'info');
             }
-            await this.db.addLog(id, 'status', 'Application installation started', 'info');
 
             // Validate application data
             this._validateApplicationData(appData);
@@ -1339,6 +1340,171 @@ export class EnhancedApplicationManager {
                 this.db.addLog(appId, 'system', `Failed to setup monitoring: ${error.message}`, 'error', actualExecutionId);
             }
         }
+    }
+
+    /**
+     * Build Docker image for application
+     * @param {Object} buildOptions - Build options
+     * @param {string} buildOptions.appId - Application ID
+     * @param {string} buildOptions.deploymentType - Type of deployment (python/binary/docker)
+     * @param {string} buildOptions.code - Application code (for python apps)
+     * @param {string} buildOptions.baseImage - Base Docker image
+     * @param {string} buildOptions.pythonVersion - Python version (for python apps)
+     * @param {Array} buildOptions.dependencies - Dependencies to install
+     * @param {string} buildOptions.binaryFile - Binary file path (for binary apps)
+     * @param {string} buildOptions.runCommand - Command to run the binary
+     * @returns {string} Built Docker image name
+     */
+    async buildDockerImage(buildOptions) {
+        const { appId, deploymentType, code, baseImage, pythonVersion, dependencies, binaryFile, runCommand } = buildOptions;
+
+        this.logger.info('Building Docker image', { appId, deploymentType });
+
+        try {
+            let dockerfile = '';
+            let imageName = `vea-${appId.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+            if (deploymentType === 'python') {
+                dockerfile = this._generatePythonDockerfile({
+                    pythonVersion: pythonVersion || '3.9',
+                    baseImage: baseImage || 'python:3.9-slim',
+                    code,
+                    dependencies
+                });
+                imageName += `-python`;
+            } else if (deploymentType === 'binary') {
+                dockerfile = this._generateBinaryDockerfile({
+                    baseImage: baseImage || 'alpine:latest',
+                    binaryFile,
+                    runCommand: runCommand || './app'
+                });
+                imageName += `-binary`;
+            } else {
+                throw new Error(`Unsupported deployment type for Docker build: ${deploymentType}`);
+            }
+
+            // Create temporary build context
+            const buildContext = path.join(this.appStorage, 'build', appId);
+            await fs.ensureDir(buildContext);
+
+            // Write Dockerfile
+            await fs.writeFile(path.join(buildContext, 'Dockerfile'), dockerfile);
+
+            // Write application code for Python apps
+            if (deploymentType === 'python' && code) {
+                await fs.writeFile(path.join(buildContext, 'app.py'), code);
+            }
+
+            // Copy binary file for binary apps if provided
+            if (deploymentType === 'binary' && binaryFile && await fs.pathExists(binaryFile)) {
+                await fs.copy(binaryFile, path.join(buildContext, 'app'));
+            }
+
+            // Build image using dockerode
+            this.logger.info('Starting Docker image build', { imageName, buildContext });
+
+            const buildStream = await this.docker.buildImage({
+                context: buildContext,
+                src: ['Dockerfile', deploymentType === 'python' ? 'app.py' : 'app']
+            }, { t: imageName });
+
+            return new Promise((resolve, reject) => {
+                let buildOutput = '';
+
+                this.docker.modem.followProgress(buildStream, (err, res) => {
+                    // Clean up build context
+                    fs.remove(buildContext).catch(() => {});
+
+                    if (err) {
+                        this.logger.error('Docker image build failed', { appId, imageName, error: err.message });
+                        reject(new Error(`Docker build failed: ${err.message}`));
+                        return;
+                    }
+
+                    this.logger.info('Docker image built successfully', { appId, imageName });
+                    resolve(imageName);
+                }, (chunk) => {
+                    // Track build progress
+                    if (chunk.stream) {
+                        buildOutput += chunk.stream;
+                        const lines = chunk.stream.split('\n').filter(line => line.trim());
+                        for (const line of lines) {
+                            this.logger.debug('Docker build output', { appId, line: line.trim() });
+                        }
+                    }
+                    if (chunk.error) {
+                        this.logger.error('Docker build error', { appId, error: chunk.error });
+                    }
+                });
+            });
+
+        } catch (error) {
+            this.logger.error('Failed to build Docker image', { appId, deploymentType, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * Generate Dockerfile for Python applications
+     * @param {Object} options - Python Docker options
+     * @returns {string} Dockerfile content
+     */
+    _generatePythonDockerfile(options) {
+        const { pythonVersion, baseImage, code, dependencies = [] } = options;
+
+        let dockerfile = `FROM ${baseImage}\n\n`;
+        dockerfile += `WORKDIR /app\n\n`;
+
+        // Install system dependencies if needed
+        dockerfile += `# Install system dependencies\nRUN apt-get update && apt-get install -y \\\n`;
+        dockerfile += `    curl \\\n`;
+        dockerfile += `    && rm -rf /var/lib/apt/lists/*\n\n`;
+
+        // Create requirements.txt if dependencies exist
+        if (dependencies.length > 0) {
+            dockerfile += `# Install Python dependencies\n`;
+            dockerfile += `RUN echo "${dependencies.join('\\n')}" > requirements.txt\n`;
+            dockerfile += `RUN pip install --no-cache-dir -r requirements.txt\n\n`;
+        }
+
+        // Copy application code
+        dockerfile += `# Copy application code\n`;
+        dockerfile += `COPY app.py .\n\n`;
+
+        // Set execution command
+        dockerfile += `CMD ["python", "app.py"]\n`;
+
+        return dockerfile;
+    }
+
+    /**
+     * Generate Dockerfile for binary applications
+     * @param {Object} options - Binary Docker options
+     * @returns {string} Dockerfile content
+     */
+    _generateBinaryDockerfile(options) {
+        const { baseImage, binaryFile, runCommand } = options;
+
+        let dockerfile = `FROM ${baseImage}\n\n`;
+        dockerfile += `WORKDIR /app\n\n`;
+
+        // Install runtime dependencies
+        dockerfile += `# Install runtime dependencies\nRUN apt-get update && apt-get install -y \\\n`;
+        dockerfile += `    ca-certificates \\\n`;
+        dockerfile += `    && rm -rf /var/lib/apt/lists/*\n\n`;
+
+        // Copy binary
+        dockerfile += `# Copy binary application\n`;
+        dockerfile += `COPY app .\n\n`;
+
+        // Make binary executable
+        dockerfile += `RUN chmod +x app\n\n`;
+
+        // Set execution command
+        const cmd = runCommand || './app';
+        dockerfile += `CMD ["sh", "-c", "${cmd}"]\n`;
+
+        return dockerfile;
     }
 
     async _cleanupOrphanedContainers() {

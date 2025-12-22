@@ -1674,29 +1674,49 @@ export class MessageHandler {
         const {
             id: appId,
             name,
-            type = 'python',
+            deploymentType = 'python',
+            type,
             code,
             dependencies = [],
             signals = [],
             kuksa_config = {},
-            environment = 'production'
+            environment = 'production',
+            // Docker configuration options
+            baseImage,
+            pythonVersion = '3.9',
+            binaryFile,
+            binaryUrl,
+            runCommand,
+            dockerImage,
+            dockerCommand,
+            ports = [],
+            volumes = [],
+            dockerEnv = {},
+            resources = {}
         } = message;
+
+        // Determine deployment type (backward compatible)
+        const resolvedDeploymentType = deploymentType || this._detectDeploymentType(message);
 
         this.logger.info('Smart deployment requested', {
             appId,
             name,
             type,
+            deploymentType: resolvedDeploymentType,
+            hasCode: !!code,
+            hasBinaryFile: !!binaryFile,
+            hasDockerImage: !!dockerImage,
             dependencies: dependencies.length,
             signals: signals.length
         });
 
         try {
-            // Step 0: Validate code input before processing
-            if (!code || typeof code !== 'string' || code.trim().length === 0) {
+            // Step 0: Validate input based on deployment type
+            if (resolvedDeploymentType === 'python' && (!code || typeof code !== 'string' || code.trim().length === 0)) {
                 return {
                     type: 'error',
                     id: message.id,
-                    error: 'No valid code provided for smart deployment',
+                    error: 'Code is required for Python applications',
                     app_id: appId,
                     suggestions: [
                         'Please provide application code',
@@ -1707,9 +1727,38 @@ export class MessageHandler {
                 };
             }
 
-            // Step 1: Auto-detect dependencies if not provided
+            if (resolvedDeploymentType === 'binary' && !binaryFile && !binaryUrl) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'Binary file or URL is required for binary applications',
+                    app_id: appId,
+                    suggestions: [
+                        'Please provide binaryFile (base64) or binaryUrl',
+                        'Ensure binary is properly encoded if using binaryFile'
+                    ],
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            if (resolvedDeploymentType === 'docker' && !dockerImage && !dockerCommand) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'Docker image or command is required for Docker applications',
+                    app_id: appId,
+                    suggestions: [
+                        'Please provide dockerImage or dockerCommand',
+                        'dockerImage: "nginx:latest" for existing images',
+                        'dockerCommand: ["run", "-d", "my-image"] for custom commands'
+                    ],
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Step 1: Auto-detect dependencies if not provided (only for Python)
             let detectedDependencies = [...dependencies];
-            if (type === 'python' && dependencies.length === 0) {
+            if (resolvedDeploymentType === 'python' && dependencies.length === 0) {
                 detectedDependencies = await this._detectPythonDependencies(code);
             }
 
@@ -1723,7 +1772,8 @@ export class MessageHandler {
             const enhancedAppData = {
                 id: uniqueId,
                 name: name || uniqueId,
-                type,
+                type: resolvedDeploymentType,
+                entryPoint: resolvedDeploymentType === 'python' ? 'app.py' : undefined,
                 code,
                 python_deps: detectedDependencies,
                 vehicle_signals: signals,
@@ -1735,8 +1785,18 @@ export class MessageHandler {
                 status: 'installing'
             };
 
-            // Step 5: Create application record
-            const app = await this.runtime.appManager.createApplication(enhancedAppData);
+            // Step 5: Create basic application record directly in database
+            this.logger.info('Creating application record for unified deployment', { appId: uniqueId, appData: enhancedAppData });
+            let app;
+            try {
+                // Create application record directly using database manager to skip traditional installation
+                await this.runtime.appManager.db.createApplication(enhancedAppData);
+                app = await this.runtime.appManager.db.getApplication(uniqueId);
+                this.logger.info('Application record created successfully', { appId: uniqueId });
+            } catch (error) {
+                this.logger.error('Failed to create application record', { appId: uniqueId, error: error.message, stack: error.stack });
+                throw error;
+            }
 
             // Step 6: Notify frontend about deployment progress
             this._broadcastDeploymentProgress(uniqueId, 'installing_dependencies', {
@@ -1745,8 +1805,27 @@ export class MessageHandler {
                 current: 0
             });
 
-            // Step 7: Deploy and start the application
-            const deployResult = await this._deployWithProgress(uniqueId, detectedDependencies);
+            // Step 7: Deploy and start the application with Docker-based approach
+            const deployOptions = {
+                appId: uniqueId,
+                deploymentType: resolvedDeploymentType,
+                code: code,
+                baseImage,
+                pythonVersion,
+                binaryFile,
+                binaryUrl,
+                runCommand,
+                dockerImage,
+                dockerCommand,
+                ports,
+                volumes,
+                dockerEnv,
+                resources,
+                kuksaConfig: kuksa_config,
+                environment,
+                dependencies: detectedDependencies
+            };
+            const deployResult = await this._deployWithProgress(uniqueId, deployOptions);
 
             return {
                 type: 'smart_deploy-response',
@@ -1771,6 +1850,31 @@ export class MessageHandler {
                 suggestions: this._getErrorSuggestions(error)
             };
         }
+    }
+
+    /**
+     * Detect deployment type based on message content
+     */
+    _detectDeploymentType(message) {
+        // Priority order: deploymentType field, then content detection
+        if (message.deploymentType) {
+            return message.deploymentType;
+        }
+
+        if (message.dockerImage || message.dockerCommand) {
+            return 'docker';
+        }
+
+        if (message.binaryFile || message.binaryUrl) {
+            return 'binary';
+        }
+
+        if (message.code) {
+            return 'python';
+        }
+
+        // Default to python for backward compatibility
+        return 'python';
     }
 
     /**
@@ -1954,30 +2058,272 @@ export class MessageHandler {
         return validation;
     }
 
-    async _deployWithProgress(appId, dependencies) {
-        // Simulate dependency installation progress
-        for (let i = 0; i < dependencies.length; i++) {
-            const dep = dependencies[i];
+    async _deployWithProgress(appId, deployOptions) {
+        const { deploymentType, dependencies = [] } = deployOptions;
 
-            this._broadcastDeploymentProgress(appId, 'installing_dependency', {
-                dependency: dep,
-                current: i + 1,
-                total: dependencies.length,
-                progress: Math.round(((i + 1) / dependencies.length) * 100)
+        try {
+            // Step 1: Create Docker image for the app
+            this._broadcastDeploymentProgress(appId, 'building_container', {
+                deploymentType,
+                progress: 10
             });
 
-            // In real implementation, this would trigger actual installation
-            await new Promise(resolve => setTimeout(resolve, 500));
+            const containerImage = await this._buildContainerImage(deployOptions);
+
+            // Step 2: Deploy container
+            this._broadcastDeploymentProgress(appId, 'deploying_container', {
+                deploymentType,
+                containerImage,
+                progress: 50
+            });
+
+            const deployResult = await this._deployContainer(appId, deployOptions, containerImage);
+
+            // Step 3: Start the container
+            this._broadcastDeploymentProgress(appId, 'starting_application', {
+                deploymentType,
+                containerImage,
+                progress: 90
+            });
+
+            const startResult = await this._startContainer(appId, deployOptions);
+
+            // Step 4: Complete
+            this._broadcastDeploymentProgress(appId, 'deployment_complete', {
+                deploymentType,
+                containerImage,
+                progress: 100,
+                status: 'running'
+            });
+
+            return startResult;
+
+        } catch (error) {
+            this.logger.error('Container deployment failed', { appId, error: error.message });
+
+            this._broadcastDeploymentProgress(appId, 'deployment_failed', {
+                deploymentType,
+                error: error.message,
+                progress: 0
+            });
+
+            throw error;
+        }
+    }
+
+    /**
+     * Build container image based on deployment type
+     */
+    async _buildContainerImage(deployOptions) {
+        const { deploymentType, appId, baseImage, pythonVersion = '3.9' } = deployOptions;
+
+        switch (deploymentType) {
+            case 'python':
+                return await this._buildPythonContainerImage(appId, deployOptions);
+            case 'binary':
+                return await this._buildBinaryContainerImage(appId, deployOptions);
+            case 'docker':
+                return await this._pullDockerImage(deployOptions);
+            default:
+                throw new Error(`Unsupported deployment type: ${deploymentType}`);
+        }
+    }
+
+    /**
+     * Build Python container image
+     */
+    async _buildPythonContainerImage(appId, deployOptions) {
+        const { code, baseImage, pythonVersion = '3.9', python_deps = [] } = deployOptions;
+
+        // Create Dockerfile for Python app
+        const finalBaseImage = baseImage || `python:${pythonVersion}`;
+        const dockerfile = `
+FROM ${finalBaseImage}
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY app.py .
+CMD ["python", "app.py"]
+`;
+
+        // Create requirements.txt
+        const requirements = python_deps.join('\n');
+
+        // Use EnhancedApplicationManager to build the image
+        return await this.runtime.appManager.buildDockerImage({
+            appId,
+            deploymentType: 'python',
+            code,
+            dependencies: python_deps,
+            baseImage
+        });
+    }
+
+    /**
+     * Build binary container image
+     */
+    async _buildBinaryContainerImage(appId, deployOptions) {
+        const { binaryFile, binaryUrl, baseImage = 'ubuntu:22.04', runCommand, systemPackages = [] } = deployOptions;
+
+        // Get binary data
+        let binaryData;
+        if (binaryFile) {
+            binaryData = binaryFile; // base64 encoded
+        } else if (binaryUrl) {
+            // Download binary from URL
+            binaryData = await this._downloadBinary(binaryUrl);
+        } else {
+            throw new Error('Binary file or URL is required for binary deployment');
         }
 
-        this._broadcastDeploymentProgress(appId, 'starting_application', {
-            progress: 100
+        // Create Dockerfile for binary app
+        const dockerfile = `
+FROM ${baseImage}
+RUN apt-get update && apt-get install -y ${systemPackages.join(' ')}
+WORKDIR /app
+COPY app .
+RUN chmod +x ${runCommand || 'app'}
+CMD ["./${runCommand || 'app'}"]
+`;
+
+        return await this.runtime.appManager.buildDockerImage({
+            appId,
+            deploymentType: 'binary',
+            binaryFile: binaryData,
+            baseImage,
+            runCommand
+        });
+    }
+
+    /**
+     * Pull existing Docker image
+     */
+    async _pullDockerImage(deployOptions) {
+        const { dockerImage, dockerCommand = ['run', '-d'] } = deployOptions;
+
+        if (!dockerImage) {
+            throw new Error('Docker image is required for Docker deployment');
+        }
+
+        // Validate image exists
+        const { exec } = await import('child_process');
+        const { promisify } = await import('util');
+        const execAsync = promisify(exec);
+
+        try {
+            await execAsync(`docker pull ${dockerImage}`);
+            return {
+                image: dockerImage,
+                command: dockerCommand
+            };
+        } catch (error) {
+            throw new Error(`Failed to pull Docker image ${dockerImage}: ${error.message}`);
+        }
+    }
+
+    /**
+     * Deploy container (create but don't start)
+     */
+    async _deployContainer(appId, deployOptions, containerImage) {
+        const { deploymentType } = deployOptions;
+
+        if (deploymentType === 'docker') {
+            // For existing Docker images, just return the image info
+            return {
+                image: containerImage.image,
+                command: containerImage.command
+            };
+        }
+
+        // For Python and binary, we have built the image
+        return {
+            image: containerImage,
+            command: []
+        };
+    }
+
+    /**
+     * Start the container
+     */
+    async _startContainer(appId, deployOptions) {
+        const { deploymentType, ports = [], volumes = [], dockerEnv = {}, resources = {} } = deployOptions;
+
+        // Convert app to Docker deployment format
+        const dockerDeployMessage = {
+            type: 'deploy_request',
+            id: 'start-' + Date.now(),
+            prototype: {
+                id: appId,
+                name: `Deployed App ${appId}`,
+                type: 'docker',
+                description: `Containerized ${deploymentType} application`,
+                config: {
+                    dockerCommand: this._buildDockerCommand(deployOptions, ports, volumes, dockerEnv, resources)
+                }
+            },
+            vehicleId: 'default-vehicle'
+        };
+
+        return await this.handleDeployRequest(dockerDeployMessage);
+    }
+
+    /**
+     * Build Docker command from deployment options
+     */
+    _buildDockerCommand(deployOptions, ports, volumes, dockerEnv, resources) {
+        const { deploymentType, containerImage, dockerCommand } = deployOptions;
+
+        if (deploymentType === 'docker' && dockerCommand) {
+            return dockerCommand;
+        }
+
+        // For Python and binary, build default command
+        const command = ['run', '-d'];
+
+        // Add container name
+        command.push('--name', `app-${deployOptions.appId}`);
+
+        // Add networking (host networking for localhost access)
+        command.push('--network', 'host');
+
+        // Add ports
+        ports.forEach(port => {
+            const [hostPort, containerPort] = port.split(':');
+            command.push('-p', port);
         });
 
-        // Start the application
-        const startResult = await this.handleRunApp({ appId });
+        // Add environment variables
+        Object.entries(dockerEnv).forEach(([key, value]) => {
+            command.push('-e', `${key}=${value}`);
+        });
 
-        return startResult;
+        // Add resource limits
+        if (resources.memory) {
+            command.push('--memory', resources.memory);
+        }
+        if (resources.cpu) {
+            command.push('--cpus', resources.cpu);
+        }
+
+        // Add image
+        command.push(containerImage);
+
+        return command;
+    }
+
+    /**
+     * Download binary from URL
+     */
+    async _downloadBinary(url) {
+        const { fetch } = await import('node-fetch');
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`Failed to download binary from ${url}: ${response.statusText}`);
+        }
+
+        const buffer = await response.arrayBuffer();
+        return buffer.toString('base64');
     }
 
     _broadcastDeploymentProgress(appId, stage, details) {
