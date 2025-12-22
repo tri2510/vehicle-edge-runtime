@@ -3,6 +3,8 @@
 ## Overview
 API specification for the new Docker app type that allows direct Docker command execution while maintaining full lifecycle management and database integration.
 
+**⚠️ IMPORTANT:** This is a breaking change from previous deployment formats. Frontend must use the exact structure below for Docker app deployments.
+
 ## 🚀 New Docker App Deployment API
 
 ### 1. Deploy Docker App
@@ -10,14 +12,14 @@ API specification for the new Docker app type that allows direct Docker command 
 // Request: Deploy a Docker application with direct command execution
 {
   "type": "deploy_request",
-  "id": "string",                    // Unique request ID
+  "id": "string",                    // Unique request ID (use timestamp)
   "prototype": {
     "id": "string",                  // App identifier (will be prefixed)
-    "name": "string",                // Display name
-    "type": "docker",                // ⭐ NEW: Docker app type
+    "name": "string",                // Display name (must contain "kuksa" for prefix)
+    "type": "docker",                // ⭐ CRITICAL: MUST be "docker" exactly
     "description": "string",         // App description
     "config": {
-      "dockerCommand": ["string"]    // Docker command arguments
+      "dockerCommand": ["string"]    // ⭐ CRITICAL: Docker command arguments array
     }
   },
   "vehicleId": "string"              // Vehicle identifier
@@ -341,3 +343,140 @@ CREATE TABLE applications (
 7. **Container Lifecycle**: Automatic container management and cleanup
 
 This API provides complete Docker app integration while maintaining the existing vehicle app management patterns and database structure.
+
+## 🔧 Troubleshooting & Common Issues
+
+### ❌ Issue: App not deploying as Docker type
+**Symptoms:**
+- App ID not prefixed (should be `kuksa-*` or `docker-*`)
+- No container created
+- App appears with error status
+
+**Solution:** Ensure these fields are EXACT:
+```javascript
+{
+  "prototype": {
+    "type": "docker",              // Must be exactly "docker"
+    "config": {
+      "dockerCommand": [...]      // Must be array, not string
+    }
+  }
+}
+```
+
+### ❌ Issue: No container ID in response
+**Symptoms:**
+- `containerId: undefined` in response
+- App shows in database but no Docker container
+
+**Solution:** Check `dockerCommand` array format:
+```javascript
+// ✅ CORRECT - Array format
+"dockerCommand": [
+  "run", "-d", "--name", "my-app", "image:tag"
+]
+
+// ❌ WRONG - String format
+"dockerCommand": "run -d --name my-app image:tag"
+```
+
+### ❌ Issue: Kuksa prefix not applied
+**Symptoms:**
+- App ID is `databroker` instead of `kuksa-databroker`
+- Prefix logic not working
+
+**Solution:** Ensure `prototype.name` contains "kuksa":
+```javascript
+{
+  "prototype": {
+    "name": "Kuksa Data Broker",   // Must contain "kuksa" (case-insensitive)
+    "type": "docker"
+  }
+}
+```
+
+## 🌐 Frontend Integration Example
+
+### Complete Working Example
+```javascript
+// Frontend WebSocket message for Kuksa server deployment
+const kuksaDeployMessage = {
+  type: 'deploy_request',
+  id: 'deploy-kuksa-' + Date.now(),
+  prototype: {
+    id: 'databroker',
+    name: 'Kuksa Data Broker',
+    type: 'docker',
+    description: 'Eclipse Kuksa vehicle signal databroker - Production deployment',
+    config: {
+      dockerCommand: [
+        'run', '-d',
+        '--name', 'kuksa-databroker-prod',
+        '--network', 'host',          // Host networking for localhost access
+        '-p', '55555:55555',         // gRPC port
+        '-p', '8090:8090',           // HTTP/VSS port
+        'ghcr.io/eclipse-kuksa/kuksa-databroker:main',
+        '--insecure',
+        '--enable-viss',
+        '--viss-port', '8090'
+      ]
+    }
+  },
+  vehicleId: 'default-vehicle'
+};
+
+// Send via WebSocket
+const ws = new WebSocket('ws://localhost:3002/runtime');
+ws.onopen = () => {
+  ws.send(JSON.stringify(kuksaDeployMessage));
+};
+```
+
+### Expected Response
+```javascript
+{
+  "type": "deploy_request-response",
+  "id": "deploy-kuksa-1766394999883",
+  "cmd": "deploy_request",
+  "executionId": "kuksa-databroker_3",     // Prefixed ID
+  "appId": "kuksa-databroker_3",           // Same as executionId
+  "status": "started",
+  "result": "Application deployed and started successfully",
+  "isDone": true,
+  "code": 0,
+  "kit_id": "runtime-id",
+  "timestamp": "2025-12-22T09:16:40.085Z"
+}
+```
+
+## 🧪 Testing Checklist
+
+Before deploying to production, test these scenarios:
+
+1. **✅ Basic Docker App**
+   - Docker app deploys with `type: "docker"`
+   - Container ID returned in response
+   - App shows `type: "docker"` in database
+
+2. **✅ Kuksa Prefix**
+   - Apps with "kuksa" in name get `kuksa-*` prefix
+   - Apps without "kuksa" get `docker-*` prefix
+
+3. **✅ Container Lifecycle**
+   - Container starts successfully
+   - App appears with `status: "running"`
+   - Container accessible via host networking
+
+4. **✅ Database Registration**
+   - App registered in applications table
+   - Container ID stored in database
+   - Proper status tracking
+
+## 📞 Support
+
+For Docker app deployment issues:
+1. Verify message format matches examples exactly
+2. Check runtime logs for Docker execution messages
+3. Ensure `prototype.type: "docker"` is present
+4. Validate `dockerCommand` is an array format
+5. Test with working examples above before customizing
