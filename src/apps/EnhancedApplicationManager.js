@@ -1396,8 +1396,33 @@ export class EnhancedApplicationManager {
             }
 
             // Copy binary file for binary apps if provided
-            if (deploymentType === 'binary' && binaryFile && await fs.pathExists(binaryFile)) {
-                await fs.copy(binaryFile, path.join(buildContext, 'app'));
+            if (deploymentType === 'binary' && binaryFile) {
+                // binaryFile is base64 encoded data, decode it and write to file
+                if (typeof binaryFile === 'string' && binaryFile.startsWith('data:')) {
+                    // Remove data URL prefix if present
+                    const base64Data = binaryFile.split(',')[1];
+                    const binaryBuffer = Buffer.from(base64Data, 'base64');
+                    await fs.writeFile(path.join(buildContext, 'app'), binaryBuffer);
+                } else if (typeof binaryFile === 'string' && binaryFile.length > 100) {
+                    // Assume it's base64 encoded data
+                    try {
+                        const binaryBuffer = Buffer.from(binaryFile, 'base64');
+                        await fs.writeFile(path.join(buildContext, 'app'), binaryBuffer);
+                    } catch (error) {
+                        this.logger.warn('Failed to decode binary data as base64, trying as file path', { appId, error: error.message });
+                        // Try as file path as fallback
+                        if (await fs.pathExists(binaryFile)) {
+                            await fs.copy(binaryFile, path.join(buildContext, 'app'));
+                        } else {
+                            throw new Error(`Binary file not found: ${binaryFile}`);
+                        }
+                    }
+                } else if (await fs.pathExists(binaryFile)) {
+                    // It's a file path
+                    await fs.copy(binaryFile, path.join(buildContext, 'app'));
+                } else {
+                    throw new Error(`Binary file not found: ${binaryFile}`);
+                }
             }
 
             // Build image using dockerode
