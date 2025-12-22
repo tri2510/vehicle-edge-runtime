@@ -71,7 +71,7 @@ export class DatabaseManager {
                 name TEXT NOT NULL,
                 version TEXT,
                 description TEXT,
-                type TEXT CHECK (type IN ('python', 'binary')) NOT NULL,
+                type TEXT CHECK (type IN ('python', 'binary', 'docker')) NOT NULL,
                 status TEXT DEFAULT 'installed' CHECK (
                     status IN ('installing', 'installed', 'starting', 'running', 'paused', 'stopped', 'uninstalling', 'error')
                 ),

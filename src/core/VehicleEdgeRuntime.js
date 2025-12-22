@@ -635,4 +635,125 @@ export class VehicleEdgeRuntime extends EventEmitter {
             }
         }
     }
+
+    /**
+     * Deploy Kuksa Server as Regular App
+     * Uses the existing app management system to treat Kuksa as a regular database app
+     */
+    async deployKuksaServer(options = {}) {
+        const { action = 'start', vehicleId } = options;
+
+        this.logger.info('Deploying Kuksa server as regular app', { action, vehicleId });
+
+        try {
+            // Ensure Kuksa server app exists in database
+            await this._ensureKuksaAppExists();
+
+            switch (action) {
+                case 'start':
+                    return await this.appManager.runBinaryApp({
+                        appId: 'kuksa-server',
+                        vehicleId,
+                        config: {
+                            dockerImage: 'ghcr.io/eclipse-kuksa/kuksa-databroker:main',
+                            exposedPorts: {
+                                grpc: 55555,
+                                http: 8090
+                            },
+                            environment: {
+                                'KUKSA_INSECURE': 'true',
+                                'KUKSA_ENABLE_VISS': 'true',
+                                'KUKSA_VISS_PORT': '8090'
+                            },
+                            args: [
+                                '--insecure',
+                                '--enable-viss',
+                                '--viss-port', '8090'
+                            ]
+                        }
+                    });
+                case 'stop':
+                    return await this.appManager.stopApplication('kuksa-server');
+                case 'restart':
+                    await this.appManager.stopApplication('kuksa-server');
+                    return await this.appManager.runBinaryApp({
+                        appId: 'kuksa-server',
+                        vehicleId
+                    });
+                case 'status':
+                    const app = await this.appManager.getApplicationStatus('kuksa-server');
+                    return {
+                        status: app.status,
+                        running: app.status === 'running',
+                        containerId: app.containerId,
+                        endpoints: {
+                            grpc: 'localhost:55555',
+                            http: 'localhost:8090',
+                            internal: 'kuksa-server:55555'
+                        }
+                    };
+                case 'remove':
+                    await this.appManager.stopApplication('kuksa-server');
+                    await this.appManager.uninstallApplication('kuksa-server');
+                    return { status: 'removed', action: 'remove' };
+                default:
+                    throw new Error(`Unknown action: ${action}`);
+            }
+        } catch (error) {
+            this.logger.error('Failed to manage Kuksa server app', { action, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * Ensure Kuksa server app exists in database
+     */
+    async _ensureKuksaAppExists() {
+        const kuksaAppData = {
+            id: 'kuksa-server',
+            name: 'Kuksa Data Broker',
+            description: 'Eclipse Kuksa vehicle signal databroker for VSS data access',
+            version: '0.6.1-dev.0',
+            type: 'binary',
+            binary_path: 'ghcr.io/eclipse-kuksa/kuksa-databroker:main',
+            is_system: true,  // Mark as system app
+            config: {
+                dockerImage: 'ghcr.io/eclipse-kuksa/kuksa-databroker:main',
+                exposedPorts: {
+                    grpc: 55555,
+                    http: 8090
+                },
+                environment: {
+                    'KUKSA_INSECURE': 'true',
+                    'KUKSA_ENABLE_VISS': 'true',
+                    'KUKSA_VISS_PORT': '8090'
+                },
+                args: [
+                    '--insecure',
+                    '--enable-viss',
+                    '--viss-port', '8090'
+                ]
+            }
+        };
+
+        try {
+            // Check if app exists
+            const existingApp = await this.appManager.db.getApplication('kuksa-server');
+            if (!existingApp) {
+                // Create the app if it doesn't exist
+                await this.appManager.installApplication(kuksaAppData);
+                this.logger.info('Kuksa server app created in database');
+            } else {
+                // Update existing app to ensure it has latest config
+                await this.appManager.db.updateApplication('kuksa-server', {
+                    ...kuksaAppData,
+                    status: existingApp.status  // Preserve current status
+                });
+                this.logger.info('Kuksa server app updated in database');
+            }
+        } catch (error) {
+            this.logger.error('Failed to ensure Kuksa app exists', { error: error.message });
+            throw error;
+        }
+    }
 }

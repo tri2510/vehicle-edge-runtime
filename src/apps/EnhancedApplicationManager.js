@@ -206,6 +206,16 @@ export class EnhancedApplicationManager {
                 }
             }
 
+            // Inject Kuksa server endpoints for vehicle apps
+            containerOptions.env = {
+                ...containerOptions.env,
+                'KUKSA_HOST': 'kuksa-server',
+                'KUKSA_PORT': '55555',
+                'KUKSA_ENDPOINT': 'kuksa-server:55555',
+                'KUKSA_INSECURE': 'true'
+            };
+            this.logger.info('Kuksa endpoints injected', { appId });
+
             // Create the application files in the app directory
             try {
                 await fs.ensureDir(containerOptions.appDir);
@@ -296,10 +306,10 @@ export class EnhancedApplicationManager {
         }
     }
 
-    async runBinaryApp(options) {
-        const { appId, args, env, workingDir, vehicleId } = options;
+    async runDockerApp(options) {
+        const { appId, args, env, workingDir, vehicleId, config } = options;
 
-        this.logger.info('Starting binary application', { appId, vehicleId });
+        this.logger.info('Starting Docker application', { appId, vehicleId });
 
         try {
             const app = await this.db.getApplication(appId);
@@ -307,7 +317,93 @@ export class EnhancedApplicationManager {
                 throw new Error(`Application not found: ${appId}`);
             }
 
-            if (app.status !== 'installed') {
+            const executionId = uuidv4();
+
+            // Update status to starting
+            await this.db.updateApplication(appId, {
+                status: 'starting',
+                last_start: new Date().toISOString()
+            });
+
+            const actualExecutionId = executionId;
+
+            // Prepare Docker execution options
+            const appConfig = config || app.config || {};
+            const dockerCommand = appConfig.dockerCommand || args || [];
+
+            if (!dockerCommand || dockerCommand.length === 0) {
+                throw new Error('Docker app requires dockerCommand in config or args');
+            }
+
+            this.logger.info('Executing Docker command', { appId, dockerCommand });
+
+            // Execute Docker command
+            const { exec } = await import('child_process');
+            const { promisify } = await import('util');
+            const execAsync = promisify(exec);
+
+            const fullCommand = `docker ${dockerCommand.join(' ')}`;
+            this.logger.info('Running Docker command', { appId, command: fullCommand });
+
+            const { stdout, stderr } = await execAsync(fullCommand);
+
+            // Parse container ID from output if it's a docker run command
+            let containerId = null;
+            if (dockerCommand.includes('run') && stdout.trim()) {
+                containerId = stdout.trim();
+            }
+
+            // Update runtime state
+            await this.db.updateRuntimeState(appId, {
+                execution_id: actualExecutionId,
+                container_id: containerId,
+                current_state: 'running',
+                last_heartbeat: new Date().toISOString(),
+                resources: JSON.stringify({
+                    cpu_limit: '100%', // Docker apps use host resources
+                    memory_limit: 'unlimited'
+                })
+            });
+
+            this.logger.info('Docker application started successfully', {
+                appId,
+                executionId: actualExecutionId,
+                containerId,
+                command: fullCommand
+            });
+
+            // Return success response
+            return {
+                status: 'started',
+                executionId: actualExecutionId,
+                containerId: containerId,
+                output: stdout,
+                error: stderr
+            };
+
+        } catch (error) {
+            // Update error status
+            await this.db.updateApplication(appId, { status: 'error' });
+            await this.db.addLog(appId, 'system', `Failed to start: ${error.message}`, 'error');
+
+            this.logger.error('Failed to start Docker application', { appId, error: error.message });
+            throw error;
+        }
+    }
+
+    async runBinaryApp(options) {
+        const { appId, args, env, workingDir, vehicleId, config } = options;
+
+        this.logger.info('Starting binary application', { appId, vehicleId, hasDockerImage: !!config?.dockerImage });
+
+        try {
+            const app = await this.db.getApplication(appId);
+            if (!app) {
+                throw new Error(`Application not found: ${appId}`);
+            }
+
+            // For Docker images, we can start them even if not "installed" status
+            if (app.status !== 'installed' && !config?.dockerImage) {
                 throw new Error(`Application not installed: ${appId}`);
             }
 
@@ -321,15 +417,23 @@ export class EnhancedApplicationManager {
 
             const actualExecutionId = executionId;
 
+            // Detect if this is a Docker image deployment (for Kuksa server, etc.)
+            const isDockerImage = config?.dockerImage || (app.binary_path && app.binary_path.includes('/') === false && app.binary_path.includes('.'));
+            const appConfig = config || app.config || {};
+
             // Prepare container options
             let containerOptions = {
                 executionId: actualExecutionId,
                 appId,
-                appDir: app.data_path || `/app/applications/${appId}`,
-                binaryPath: app.binary_path || `/app/applications/${appId}/main`,
-                args: args || app.args || [],
-                env: { ...app.env, ...env } || {},
-                workingDir: workingDir || `/app`
+                appDir: isDockerImage ? undefined : (app.data_path || `/app/applications/${appId}`),
+                binaryPath: isDockerImage ? appConfig.dockerImage || app.binary_path : (app.binary_path || `/app/applications/${appId}/main`),
+                args: args || appConfig.args || app.args || [],
+                env: { ...app.env, ...env, ...(appConfig.environment || {}) } || {},
+                workingDir: workingDir || `/app`,
+                // Docker image configuration
+                dockerImage: isDockerImage,
+                exposedPorts: appConfig.exposedPorts,
+                volumes: appConfig.volumes
             };
 
             // Inject vehicle credentials
@@ -350,6 +454,16 @@ export class EnhancedApplicationManager {
                     });
                 }
             }
+
+            // Inject Kuksa server endpoints for vehicle apps
+            containerOptions.env = {
+                ...containerOptions.env,
+                'KUKSA_HOST': 'kuksa-server',
+                'KUKSA_PORT': '55555',
+                'KUKSA_ENDPOINT': 'kuksa-server:55555',
+                'KUKSA_INSECURE': 'true'
+            };
+            this.logger.info('Kuksa endpoints injected', { appId });
 
             // Create and start container
             const container = await this._createBinaryContainer(containerOptions);
@@ -629,7 +743,7 @@ export class EnhancedApplicationManager {
     // Private methods
 
     _validateApplicationData(appData) {
-        const { id, name, type, code, entryPoint, binaryPath } = appData;
+        const { id, name, type, code, entryPoint, binaryPath, config } = appData;
 
         if (!id || !name || !type) {
             throw new Error('Missing required fields: id, name, type');
@@ -639,8 +753,14 @@ export class EnhancedApplicationManager {
             throw new Error('Python applications require code and entryPoint');
         }
 
-        if (type === 'binary' && !binaryPath) {
-            throw new Error('Binary applications require binaryPath');
+        // For binary apps, allow either binaryPath or dockerImage in config
+        if (type === 'binary' && !binaryPath && !(config && config.dockerImage)) {
+            throw new Error('Binary applications require binaryPath or dockerImage in config');
+        }
+
+        // For Docker apps, require dockerCommand in config
+        if (type === 'docker' && !(config && config.dockerCommand)) {
+            throw new Error('Docker applications require dockerCommand in config');
         }
     }
 
@@ -687,6 +807,11 @@ export class EnhancedApplicationManager {
 
     async _prepareApplicationStorage(appData) {
         const { id, type, code, entryPoint } = appData;
+        // Docker apps don't need local storage
+        if (type === 'docker') {
+            return null; // No local directory needed for Docker apps
+        }
+
         const appDir = path.join(this.appStorage, type === 'python' ? 'python' : 'binary', id);
         await fs.ensureDir(appDir);
 
@@ -1042,9 +1167,23 @@ export class EnhancedApplicationManager {
     }
 
     async _createBinaryContainer(options) {
-        const { executionId: actualExecutionId, appId, appDir, binaryPath, args, env, workingDir } = options;
+        const {
+            executionId: actualExecutionId,
+            appId,
+            appDir,
+            binaryPath,
+            args,
+            env,
+            workingDir,
+            dockerImage,
+            exposedPorts,
+            volumes
+        } = options;
 
-        if (!appDir) {
+        // Detect if this is a Docker image deployment
+        const isDockerImage = dockerImage && (binaryPath.includes('/') === false || dockerImage);
+
+        if (!isDockerImage && !appDir) {
             throw new Error('Application directory path is required for container creation');
         }
 
@@ -1056,24 +1195,36 @@ export class EnhancedApplicationManager {
         const sanitizedName = this._sanitizeAppIdForDocker(appId);
 
         const containerConfig = {
-            Image: 'alpine:latest',
-            WorkingDir: workingDir,
-            Cmd: [binaryPath, ...args],
+            Image: isDockerImage ? binaryPath : 'alpine:latest',
+            WorkingDir: isDockerImage ? '/app' : workingDir,
+            Cmd: isDockerImage ? (args || []) : [binaryPath, ...args],
             Env: [
                 'APP_ID=' + appId,
                 'EXECUTION_ID=' + actualExecutionId,
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
-                Binds: [`${path.resolve(appDir)}:${workingDir}`],
+                Binds: isDockerImage ?
+                    (volumes ? Object.entries(volumes).map(([hostPath, containerPath]) => `${hostPath}:${containerPath}`) : []) :
+                    [`${path.resolve(appDir)}:${workingDir}`],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
                 NetworkMode: 'bridge',
                 ReadonlyRootfs: false,
                 Tmpfs: {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
-                }
+                },
+                PortBindings: isDockerImage && exposedPorts ?
+                    Object.entries(exposedPorts).reduce((acc, [portAlias, port]) => {
+                        acc[`${port}/tcp`] = [{ HostPort: `${port}` }];
+                        return acc;
+                    }, {}) : undefined
             },
+            ExposedPorts: isDockerImage && exposedPorts ?
+                Object.entries(exposedPorts).reduce((acc, [portAlias, port]) => {
+                    acc[`${port}/tcp`] = {};
+                    return acc;
+                }, {}) : undefined,
             name: `VEA-${sanitizedName}`,
             AttachStdout: true,
             AttachStderr: true,

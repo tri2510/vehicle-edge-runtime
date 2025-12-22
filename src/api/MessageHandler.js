@@ -146,6 +146,8 @@ export class MessageHandler {
                 return await this.handleGenerateVehicleModel(message);
             case 'revert_vehicle_model':
                 return await this.handleRevertVehicleModel(message);
+            case 'deploy_kuksa_server':
+                return await this.handleDeployKuksaServer(message);
             case 'deploy_request':
             case 'deploy-request':
             case 'deploy_n_run':
@@ -725,7 +727,10 @@ export class MessageHandler {
 
             // First validate the code before creating any database entries
             let appType;
-            if (prototype?.language === 'python' || language === 'python' || (code && (code.includes('import ') || code.includes('def ')))) {
+            if (prototype?.type === 'docker') {
+                // Handle Docker app deployment
+                appType = 'docker';
+            } else if (prototype?.language === 'python' || language === 'python' || (code && (code.includes('import ') || code.includes('def ')))) {
                 // Validate Python syntax before deployment
                 if (!this._validatePythonSyntax(code)) {
                     return {
@@ -774,20 +779,21 @@ export class MessageHandler {
                 status: 'installed',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                // Required database fields
-                entry_point: 'main.py',
-                binary_path: `/tmp/app-data-${appId}/main`,
+                // Required database fields - set different defaults for Docker apps
+                entry_point: appType === 'docker' ? null : 'main.py',
+                binary_path: appType === 'docker' ? null : `/tmp/app-data-${appId}/main`,
                 args: JSON.stringify([]),
                 env: JSON.stringify({}),
-                working_dir: '/app',
+                working_dir: appType === 'docker' ? null : '/app',
                 python_deps: JSON.stringify([]),
                 vehicle_signals: JSON.stringify([]),
-                data_path: `/tmp/app-data-${appId}`,
+                data_path: appType === 'docker' ? null : `/tmp/app-data-${appId}`,
                 config: JSON.stringify({
                     deployment_method: 'direct_websocket',
                     deployment_source: 'WebSocket_API',
                     vehicle_id: vehicleId || 'unknown',
-                    deployment_timestamp: new Date().toISOString()
+                    deployment_timestamp: new Date().toISOString(),
+                    dockerCommand: appType === 'docker' ? prototype?.config?.dockerCommand : null
                 })
             };
 
@@ -815,7 +821,18 @@ export class MessageHandler {
 
             // Determine app type and run accordingly
             let result;
-            if (appType === 'python') {
+            if (appType === 'docker') {
+                // Handle Docker app deployment
+                result = await this.runtime.appManager.runDockerApp({
+                    executionId,
+                    appId,
+                    config: prototype?.config || {},
+                    env: {
+                        APP_NAME: prototype?.name || 'Deployed Docker App'
+                    },
+                    vehicleId
+                });
+            } else if (appType === 'python') {
 
                 result = await this.runtime.appManager.runPythonApp({
                     executionId,
@@ -1381,6 +1398,8 @@ export class MessageHandler {
                 result = await this.runtime.appManager.runPythonApp(deployOptions);
             } else if (appData.type === 'binary') {
                 result = await this.runtime.appManager.runBinaryApp(deployOptions);
+            } else if (appData.type === 'docker') {
+                result = await this.runtime.appManager.runDockerApp(deployOptions);
             } else {
                 throw new Error(`Unsupported application type: ${appData.type}`);
             }
@@ -1982,6 +2001,85 @@ export class MessageHandler {
         }
 
         return suggestions;
+    }
+
+    /**
+     * Handle Kuksa Server Deployment
+     * Deploys Kuksa server as a regular app and adds endpoint information
+     */
+    async handleDeployKuksaServer(message) {
+        const { action, vehicleId } = message;
+
+        this.logger.info('Handling Kuksa server deployment', { action, vehicleId });
+
+        try {
+            const result = await this.runtime.deployKuksaServer({ action, vehicleId });
+
+            // Add Kuksa endpoints for all responses except errors
+            const kuksaEndpoints = {
+                grpc: 'localhost:55555',
+                http: 'localhost:8090',
+                internal: 'kuksa-server:55555'  // For vehicle apps
+            };
+
+            // Handle different result formats from binary app operations
+            if (result.status === 'started' || result.status === 'stopped') {
+                // Binary app response format
+                return {
+                    type: 'kuksa_server_deployment_status',
+                    id: message.id,
+                    status: result.status,
+                    action: action,
+                    containerId: result.containerId,
+                    executionId: result.executionId,
+                    appId: result.appId,
+                    endpoints: kuksaEndpoints,
+                    timestamp: new Date().toISOString()
+                };
+            } else if (action === 'status') {
+                // Status check response
+                return {
+                    type: 'kuksa_server_deployment_status',
+                    id: message.id,
+                    status: result.status,
+                    action: action,
+                    running: result.running,
+                    containerId: result.containerId,
+                    endpoints: kuksaEndpoints,
+                    timestamp: new Date().toISOString()
+                };
+            } else if (result.status === 'removed') {
+                // Remove operation response
+                return {
+                    type: 'kuksa_server_deployment_status',
+                    id: message.id,
+                    status: result.status,
+                    action: action,
+                    endpoints: kuksaEndpoints,
+                    timestamp: new Date().toISOString()
+                };
+            } else {
+                // Fallback response
+                return {
+                    type: 'kuksa_server_deployment_status',
+                    id: message.id,
+                    status: result.status,
+                    action: action,
+                    containerId: result.containerId,
+                    endpoints: kuksaEndpoints,
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+        } catch (error) {
+            this.logger.error('Failed to deploy Kuksa server', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to deploy Kuksa server: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
     }
 
   }
