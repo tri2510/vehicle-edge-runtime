@@ -1477,7 +1477,7 @@ export class EnhancedApplicationManager {
     _generatePythonDockerfile(options) {
         const { pythonVersion, baseImage, code, dependencies = [] } = options;
 
-        let dockerfile = `FROM ${baseImage}\n\n`;
+        let dockerfile = `FROM ${baseImage || 'python:3.9'}\n\n`;
         dockerfile += `WORKDIR /app\n\n`;
 
         // Install system dependencies if needed
