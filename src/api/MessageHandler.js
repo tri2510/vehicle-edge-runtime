@@ -1017,6 +1017,14 @@ export class MessageHandler {
                     result = await this.runtime.appManager.stopApplication(app_id);
                     break;
 
+                case 'pause':
+                    result = await this.runtime.appManager.pauseApplication(app_id);
+                    break;
+
+                case 'resume':
+                    result = await this.runtime.appManager.resumeApplication(app_id);
+                    break;
+
                 case 'restart':
                     // Stop the app first
                     result = await this.runtime.appManager.stopApplication(app_id);
@@ -1035,7 +1043,7 @@ export class MessageHandler {
                     };
 
                 case 'remove':
-                    result = await this.runtime.appManager.stopApplication(app_id);
+                    result = await this.runtime.appManager.removeApplication(app_id);
                     break;
 
                 default:

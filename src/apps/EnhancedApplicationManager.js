@@ -2217,53 +2217,102 @@ export class EnhancedApplicationManager {
             resolvedAppId
         });
 
-        // Find and stop the application using the resolved appId
+        // Get app info to determine app type
+        let app = null;
+        if (this.db) {
+            try {
+                app = await this.db.getApplication(resolvedAppId);
+            } catch (error) {
+                this.logger.warn('Failed to get app from database', { appId: resolvedAppId, error: error.message });
+            }
+        }
+
+        if (!app) {
+            throw new Error(`Application not found in database: ${resolvedAppId}`);
+        }
+
         let stopped = false;
-        const executionIdsToRemove = [];
 
-        for (const [executionId, appInfo] of this.applications) {
-            if (appInfo.appId === resolvedAppId) {
-                try {
-                    this.logger.info('Stopping application container', {
-                        executionId,
-                        appId: resolvedAppId
-                    });
-
-                    await appInfo.container.stop({ t: 10 });
-                    await appInfo.container.remove();
-
-                    executionIdsToRemove.push(executionId);
-                    stopped = true;
-
-                    // Update database status
-                    if (this.db) {
-                        try {
-                            await this.db.updateApplication(resolvedAppId, {
-                                status: 'stopped',
-                                last_stop: new Date().toISOString()
-                            });
-                            await this.db.updateRuntimeState(resolvedAppId, {
-                                current_state: 'stopped',
-                                exit_code: 0
-                            });
-                        } catch (dbError) {
-                            this.logger.warn('Failed to update database on stop', {
-                                appId: resolvedAppId,
-                                error: dbError.message
-                            });
-                        }
-                    }
-
-                    // Remove from memory cache
-                    this.applications.delete(executionId);
-
-                } catch (containerError) {
-                    this.logger.error('Failed to stop container', {
-                        executionId,
-                        appId: resolvedAppId,
-                        error: containerError.message
-                    });
+        // Handle Docker apps using container ID from database
+        if (app.type === 'docker') {
+            try {
+                // Get container ID from runtime state
+                let containerId = null;
+                if (this.db) {
+                    const runtimeState = await this.db.getRuntimeState(resolvedAppId);
+                    containerId = runtimeState?.container_id;
                 }
+
+                if (containerId) {
+                    this.logger.info('Stopping Docker container', { appId: resolvedAppId, containerId });
+
+                    const { exec } = await import('child_process');
+                    const { promisify } = await import('util');
+                    const execAsync = promisify(exec);
+
+                    // Stop and remove container
+                    await execAsync(`docker stop ${containerId}`);
+                    await execAsync(`docker rm ${containerId}`);
+
+                    this.logger.info('Docker container stopped successfully', { appId: resolvedAppId, containerId });
+                    stopped = true;
+                } else {
+                    this.logger.warn('No container ID found for Docker app', { appId: resolvedAppId });
+                }
+            } catch (error) {
+                this.logger.warn('Failed to stop Docker container', {
+                    appId: resolvedAppId,
+                    error: error.message
+                });
+            }
+        } else {
+            // Handle Python/Binary apps from memory cache
+            const executionIdsToRemove = [];
+
+            for (const [executionId, appInfo] of this.applications) {
+                if (appInfo.appId === resolvedAppId) {
+                    try {
+                        this.logger.info('Stopping application container', {
+                            executionId,
+                            appId: resolvedAppId
+                        });
+
+                        await appInfo.container.stop({ t: 10 });
+                        await appInfo.container.remove();
+
+                        executionIdsToRemove.push(executionId);
+                        stopped = true;
+
+                        // Remove from memory cache
+                        this.applications.delete(executionId);
+
+                    } catch (containerError) {
+                        this.logger.error('Failed to stop container', {
+                            executionId,
+                            appId: resolvedAppId,
+                            error: containerError.message
+                        });
+                    }
+                }
+            }
+        }
+
+        // Update database status for all app types
+        if (stopped && this.db) {
+            try {
+                await this.db.updateApplication(resolvedAppId, {
+                    status: 'stopped',
+                    last_stop: new Date().toISOString()
+                });
+                await this.db.updateRuntimeState(resolvedAppId, {
+                    current_state: 'stopped',
+                    exit_code: 0
+                });
+            } catch (dbError) {
+                this.logger.warn('Failed to update database on stop', {
+                    appId: resolvedAppId,
+                    error: dbError.message
+                });
             }
         }
 
@@ -2276,6 +2325,46 @@ export class EnhancedApplicationManager {
         } else {
             throw new Error(`Application not running: ${resolvedAppId}`);
         }
+    }
+
+    /**
+     * Remove application (stop and delete from database)
+     * @param {string} appId - Application ID
+     * @returns {Object} Result of the remove operation
+     */
+    async removeApplication(appId) {
+        this.logger.info('Removing application', { appId });
+
+        try {
+            // First stop the application if it's running
+            await this.stopApplication(appId);
+        } catch (error) {
+            // Ignore stop errors if app wasn't running
+            this.logger.debug('App was not running during remove', {
+                appId,
+                error: error.message
+            });
+        }
+
+        // Remove from database
+        if (this.db) {
+            try {
+                await this.db.deleteApplication(appId);
+                this.logger.info('Application removed from database', { appId });
+            } catch (dbError) {
+                this.logger.warn('Failed to remove from database', {
+                    appId,
+                    error: dbError.message
+                });
+                throw dbError;
+            }
+        }
+
+        return {
+            status: 'removed',
+            appId,
+            message: 'Application removed successfully'
+        };
     }
 
     /**
