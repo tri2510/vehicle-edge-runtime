@@ -307,9 +307,9 @@ export class EnhancedApplicationManager {
     }
 
     async runDockerApp(options) {
-        const { appId, args, env, workingDir, vehicleId, config } = options;
+        const { appId, executionId, args, env, workingDir, vehicleId, config } = options;
 
-        this.logger.info('Starting Docker application', { appId, vehicleId });
+        this.logger.info('Starting Docker application', { appId, executionId, vehicleId });
 
         try {
             const app = await this.db.getApplication(appId);
@@ -317,15 +317,13 @@ export class EnhancedApplicationManager {
                 throw new Error(`Application not found: ${appId}`);
             }
 
-            const executionId = uuidv4();
+            const actualExecutionId = executionId || uuidv4();
 
             // Update status to starting
             await this.db.updateApplication(appId, {
                 status: 'starting',
                 last_start: new Date().toISOString()
             });
-
-            const actualExecutionId = executionId;
 
             // Prepare Docker execution options
             const appConfig = config || app.config || {};
@@ -986,7 +984,7 @@ export class EnhancedApplicationManager {
                 ],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
-                NetworkMode: 'bridge',
+                NetworkMode: 'host',
                 ReadonlyRootfs: false,
                 Tmpfs: {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
@@ -1209,16 +1207,12 @@ export class EnhancedApplicationManager {
                     [`${path.resolve(appDir)}:${workingDir}`],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
-                NetworkMode: 'bridge',
+                NetworkMode: 'host',
                 ReadonlyRootfs: false,
                 Tmpfs: {
                     '/tmp': 'rw,noexec,nosuid,size=100m'
                 },
-                PortBindings: isDockerImage && exposedPorts ?
-                    Object.entries(exposedPorts).reduce((acc, [portAlias, port]) => {
-                        acc[`${port}/tcp`] = [{ HostPort: `${port}` }];
-                        return acc;
-                    }, {}) : undefined
+                // PortBindings not needed with host networking - containers use host ports directly
             },
             ExposedPorts: isDockerImage && exposedPorts ?
                 Object.entries(exposedPorts).reduce((acc, [portAlias, port]) => {

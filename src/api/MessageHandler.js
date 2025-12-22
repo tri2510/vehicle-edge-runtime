@@ -708,10 +708,22 @@ export class MessageHandler {
 
         if (prototype?.id) {
             // Check for conflicts and ensure unique ID
-            executionId = await this._ensureUniqueId(prototype.id);
+            let baseId = prototype.id;
+
+            // Add prefix for special app types
+            if (prototype?.type === 'docker') {
+                if (prototype.name?.toLowerCase().includes('kuksa')) {
+                    baseId = `kuksa-${prototype.id}`;
+                } else {
+                    baseId = `docker-${prototype.id}`;
+                }
+            }
+
+            executionId = await this._ensureUniqueId(baseId);
             appId = executionId; // Both IDs are the same now
             this.logger.info('Using unique ID for deployment', {
                 frontendId: prototype.id,
+                baseId,
                 finalExecutionId: executionId
             });
         } else {
