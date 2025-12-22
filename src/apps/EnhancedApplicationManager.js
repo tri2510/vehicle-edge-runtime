@@ -1367,7 +1367,7 @@ export class EnhancedApplicationManager {
             if (deploymentType === 'python') {
                 dockerfile = this._generatePythonDockerfile({
                     pythonVersion: pythonVersion || '3.9',
-                    baseImage: baseImage || 'python:3.9-slim',
+                    baseImage: baseImage || 'python:3.9',
                     code,
                     dependencies
                 });

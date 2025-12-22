@@ -1825,6 +1825,22 @@ export class MessageHandler {
                 environment,
                 dependencies: detectedDependencies
             };
+
+            // Validate signals if provided
+            let signal_validation = {
+                valid: [],
+                invalid: [],
+                warnings: [],
+                total: 0
+            };
+
+            if (signals && signals.length > 0) {
+                signal_validation = await this.handleValidateSignals({
+                    id: message.id,
+                    signals
+                });
+            }
+
             const deployResult = await this._deployWithProgress(uniqueId, deployOptions);
 
             return {
@@ -2086,7 +2102,7 @@ export class MessageHandler {
                 progress: 90
             });
 
-            const startResult = await this._startContainer(appId, deployOptions);
+            const startResult = await this._startContainer(appId, { ...deployOptions, containerImage });
 
             // Step 4: Complete
             this._broadcastDeploymentProgress(appId, 'deployment_complete', {
