@@ -1,13 +1,25 @@
 # Vehicle Edge Runtime - Unified API Specification
 
 ## Overview
-Complete WebSocket API specification for Vehicle Edge Runtime supporting Python, Binary, and Docker application deployment with smart features.
+Complete WebSocket API specification for Vehicle Edge Runtime supporting **Python, Binary, and Docker** application deployment through **unified Docker container management**.
 
 **Connection:** `ws://localhost:3002/runtime`
 
+## 🚀 NEW: Unified Docker Container Architecture
+
+All application types (Python, Binary, Docker) now run in **isolated Docker containers** with:
+- Consistent deployment workflow
+- Real-time progress tracking
+- Enhanced dependency management
+- Resource isolation and security
+- Unified lifecycle management
+
 ## 🚀 Core Application Deployment APIs
 
-### 1. Universal App Deployment (`deploy_request`)
+### 1. Smart Unified Deployment (`smart_deploy`) ⭐ **RECOMMENDED**
+**Primary API for all app types - Python, Binary, and Docker - with unified Docker container management**
+
+### 2. Legacy App Deployment (`deploy_request`)
 **Primary API for all app types - Python, Binary, and Docker**
 
 ```javascript
@@ -206,18 +218,29 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
 
 ## 🧠 Smart Features APIs
 
-### 5. Smart Deployment (`smart_deploy`)
-**Intelligent deployment with auto-detection**
+### 5. Smart Deployment (`smart_deploy`) ⭐ **ENHANCED**
+**Unified intelligent deployment with auto-detection and Docker container management**
 
 ```javascript
-// Request: Smart deployment for Python/Binary apps
+// Request: Unified smart deployment for ALL app types (Python, Binary, Docker)
 {
   "type": "smart_deploy",
   "id": "string",
   "name": "string",                    // Display name
-  "type": "python" | "binary",         // App type (docker not supported here)
-  "code": "string",                    // Application code (required)
-  "dependencies": ["string"],          // Optional manual dependencies
+  "deploymentType": "python" | "binary" | "docker",  // ⭐ NEW: Explicit deployment type
+  "code": "string",                    // Python only: Application code
+  "binaryUrl": "string",               // Binary only: Download URL for binary
+  "binaryFile": "string",              // Binary only: Base64 encoded binary
+  "runCommand": "string",              // Binary only: Command to execute binary
+  "dockerImage": "string",             // Docker only: Existing Docker image
+  "dockerCommand": ["string"],         // Docker only: Custom Docker command array
+  "dependencies": ["string"],          // Python only: Package dependencies
+  "baseImage": "string",               // Optional: Custom base Docker image
+  "pythonVersion": "string",           // Optional: Python version (default: 3.9)
+  "ports": ["string"],                 // Optional: Port mappings (host:container)
+  "volumes": ["string"],               // Optional: Volume mappings
+  "dockerEnv": {"key": "value"},        // Optional: Docker environment variables
+  "resources": {"key": "value"},       // Optional: Resource limits
   "signals": ["string" | {path: "string", access: "string", rate_hz: number}],
   "kuksa_config": {                    // Optional KUKSA configuration
     "server": "string",
@@ -408,13 +431,165 @@ All apps (Python, Binary, Docker) use **host networking** for localhost access:
    - Signal validation functions correctly
    - Smart deployment handles auto-detected features
 
+## 🎯 Complete Deployment Examples
+
+### Python Application (Enhanced Docker-based)
+```javascript
+{
+  "type": "smart_deploy",
+  "id": "deploy-python-enhanced-" + Date.now(),
+  "deploymentType": "python",
+  "name": "Enhanced Python Vehicle App",
+  "code": `
+import requests
+import kuksa_client
+
+def main():
+    print("🚀 Enhanced Python app running in Docker container!")
+    # Your vehicle app logic here
+  `,
+  "dependencies": ["requests", "kuksa-client"],
+  "baseImage": "python:3.9-slim",
+  "pythonVersion": "3.9",
+  "ports": ["8080:8080"],
+  "kuksa_config": {
+    "server": "localhost:55555"
+  },
+  "environment": "production"
+}
+// Result: Docker container built with Python runtime + dependencies
+```
+
+### Binary Application (NEW)
+```javascript
+{
+  "type": "smart_deploy",
+  "id": "deploy-binary-" + Date.now(),
+  "deploymentType": "binary",
+  "name": "Compiled Vehicle Application",
+  "binaryUrl": "https://releases.example.com/vehicle-app-linux-amd64",
+  "runCommand": "./vehicle-app --config=/app/config.json",
+  "baseImage": "alpine:latest",
+  "ports": ["9090:9090"],
+  "environment": "production",
+  "dockerEnv": {
+    "APP_ENV": "production",
+    "LOG_LEVEL": "info"
+  },
+  "resources": {
+    "memory": "256m",
+    "cpu": "0.5"
+  }
+}
+// Result: Binary packaged in Docker container with alpine base
+```
+
+### Docker Container - Existing Image (NEW)
+```javascript
+{
+  "type": "smart_deploy",
+  "id": "deploy-docker-image-" + Date.now(),
+  "deploymentType": "docker",
+  "name": "Nginx Web Server",
+  "dockerImage": "nginx:alpine",
+  "ports": ["8888:80"],
+  "volumes": ["/host/www:/usr/share/nginx/html"],
+  "environment": "production"
+}
+// Result: Pulls nginx:alpine and runs as managed application
+```
+
+### Docker Container - Custom Command (NEW)
+```javascript
+{
+  "type": "smart_deploy",
+  "id": "deploy-custom-docker-" + Date.now(),
+  "deploymentType": "docker",
+  "name": "Custom Docker Service",
+  "dockerCommand": [
+    "run", "-d",
+    "--name", "custom-service",
+    "-p", "7777:3000",
+    "-e", "NODE_ENV=production",
+    "-v", "/host/data:/app/data",
+    "my-custom-app:latest"
+  ],
+  "environment": "production"
+}
+// Result: Custom Docker command executed as managed application
+```
+
+## 📱 Real-time Progress Tracking
+
+All deployments now provide detailed progress updates:
+
+```javascript
+// Progress stages for all deployment types
+{
+  "installing_dependencies": "Setting up dependencies...",
+  "building_container": "Building Docker image...",
+  "deploying_container": "Deploying container...",
+  "starting_container": "Starting application...",
+  "deployment_success": "Application running successfully!",
+  "deployment_failed": "Deployment failed"
+}
+
+// WebSocket progress messages
+{
+  "type": "deployment_progress",
+  "appId": "app-id",
+  "stage": "building_container",
+  "details": {
+    "deploymentType": "python",
+    "progress": 45,
+    "imageName": "vea-my-app-python"
+  }
+}
+```
+
+## 🔄 Migration Guide for Existing Python Deployments
+
+### Before (Traditional)
+```javascript
+// Old approach - direct Python execution
+{
+  "type": "smart_deploy",
+  "code": "print('Hello')",
+  "dependencies": ["requests"]
+}
+```
+
+### After (Enhanced Docker-based) ⭐ **RECOMMENDED**
+```javascript
+// New approach - Docker container with enhanced features
+{
+  "type": "smart_deploy",
+  "deploymentType": "python",
+  "code": "print('Hello')",
+  "dependencies": ["requests"],
+  "baseImage": "python:3.9-slim",
+  "ports": ["8080:8080"],
+  "environment": "production"
+}
+```
+
+### Benefits of Migration
+✅ **Better Isolation** - Apps run in isolated containers
+✅ **Enhanced Security** - Container boundaries prevent conflicts
+✅ **Dependency Management** - No global Python package conflicts
+✅ **Resource Control** - Memory and CPU limits available
+✅ **Progress Tracking** - Real-time deployment progress
+✅ **Consistent Environment** - Same environment everywhere
+
 ## 📞 Integration Support
 
 **For integration issues:**
-1. Verify message format matches examples exactly
-2. Check runtime logs for detailed error messages
-3. Ensure WebSocket connection to `ws://localhost:3002/runtime`
-4. Test with provided examples before customizing
-5. Reference this unified specification for all API needs
+1. **Use `smart_deploy` with `deploymentType`** for all new implementations
+2. Verify message format matches examples exactly
+3. Check runtime logs for detailed error messages
+4. Ensure WebSocket connection to `ws://localhost:3002/runtime`
+5. Test with provided examples before customizing
+6. Monitor progress via WebSocket for better user experience
+7. Reference `FRONTEND_BINARY_DOCKER_IMPLEMENTATION.md` for UI guidelines
 
-**Complete API specification synced with current Vehicle Edge Runtime implementation.**
+**Complete unified API specification with Docker container management for all deployment types.**
