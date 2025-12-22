@@ -77,8 +77,8 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
   "type": "deploy_request",
   "id": "deploy-kuksa-" + Date.now(),
   "prototype": {
-    "id": "databroker",
-    "name": "Kuksa Data Broker",        // Must contain "kuksa" for prefix
+    "id": "kuksa-vea-kuksa-databroker",  // Frontend provides complete ID
+    "name": "Kuksa Data Broker",        // Display name (no prefix logic)
     "type": "docker",                  // ⭐ CRITICAL: MUST be "docker"
     "description": "Eclipse Kuksa vehicle signal databroker",
     "config": {
@@ -97,7 +97,7 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
   },
   "vehicleId": "default-vehicle"
 }
-// Result: App ID = "kuksa-databroker" (with prefix)
+// Result: App ID = "kuksa-vea-kuksa-databroker" (exact frontend ID)
 ```
 
 #### Docker App (Other)
@@ -106,8 +106,8 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
   "type": "deploy_request",
   "id": "deploy-nginx-" + Date.now(),
   "prototype": {
-    "id": "webserver",
-    "name": "Nginx Web Server",         // No "kuksa" in name
+    "id": "docker-nginx",                // Frontend provides complete ID
+    "name": "Nginx Web Server",         // Display name
     "type": "docker",
     "description": "Web server for vehicle UI",
     "config": {
@@ -121,7 +121,7 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
   },
   "vehicleId": "default-vehicle"
 }
-// Result: App ID = "docker-webserver" (with prefix)
+// Result: App ID = "docker-nginx" (exact frontend ID)
 ```
 
 ## 🔧 App Management APIs
@@ -140,7 +140,7 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
   "id": "string",
   "applications": [
     {
-      "app_id": "kuksa-databroker",      // Prefixed ID
+      "app_id": "kuksa-vea-kuksa-databroker", // Frontend ID
       "name": "Kuksa Data Broker",
       "type": "docker",                  // | "python" | "binary"
       "status": "running",               // | "stopped" | "error" | "paused"
@@ -295,29 +295,32 @@ Complete WebSocket API specification for Vehicle Edge Runtime supporting Python,
 }
 ```
 
-## 🎯 App ID Prefixing Logic
+## 🎯 App ID Management
 
-**Automatic prefixing based on app type and name:**
+**No automatic prefixing - frontend controls complete ID:**
+
+The runtime uses the `prototype.id` field directly without any automatic modifications. The frontend is responsible for providing the complete app ID including any desired prefixes.
 
 ```javascript
-// Docker Apps:
-if (prototype.type === 'docker') {
-  if (prototype.name.toLowerCase().includes('kuksa')) {
-    baseId = `kuksa-${prototype.id}`;    // e.g., "kuksa-databroker"
-  } else {
-    baseId = `docker-${prototype.id}`;   // e.g., "docker-nginx"
-  }
-}
+// Runtime behavior:
+executionId = await this._ensureUniqueId(prototype.id);  // Uses frontend ID directly
+appId = executionId;  // Both IDs are the same
 
-// Python/Binary Apps:
-// No prefix applied - use prototype.id directly
-// e.g., "vehicle-sensor-app" (not "python-vehicle-sensor-app")
+// Examples of frontend-provided IDs:
+- {id: "kuksa-vea-kuksa-databroker"} → Final ID: "kuksa-vea-kuksa-databroker"
+- {id: "vehicle-sensor-app"} → Final ID: "vehicle-sensor-app"
+- {id: "docker-webserver"} → Final ID: "docker-webserver"
+- {id: "my-custom-app"} → Final ID: "my-custom-app"
 ```
 
-**Examples:**
-- `{id: "databroker", name: "Kuksa Data Broker", type: "docker"}` → `kuksa-databroker`
-- `{id: "webserver", name: "Nginx", type: "docker"}` → `docker-webserver`
-- `{id: "sensor-app", name: "Vehicle Sensor", type: "python"}` → `vehicle-sensor-app`
+**Frontend Responsibility:**
+- Provide complete, unique IDs in `prototype.id`
+- Include any desired prefixes (kuksa-, docker-, etc.)
+- Handle ID generation logic according to app naming conventions
+
+**Runtime Responsibility:**
+- Ensure uniqueness by appending `_2`, `_3`, etc. if conflicts exist
+- Use the frontend-provided ID as the base for uniqueness checking
 
 ## 🔧 Troubleshooting & Common Issues
 
@@ -337,9 +340,6 @@ if (prototype.type === 'docker') {
   }
   ```
 
-**Issue: Kuksa prefix not applied**
-- **Symptoms:** App ID is "databroker" instead of "kuksa-databroker"
-- **Solution:** Ensure `prototype.name` contains "kuksa" (case-insensitive)
 
 **Issue: No container ID in response**
 - **Solution:** Check `dockerCommand` is array format:

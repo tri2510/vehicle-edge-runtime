@@ -710,14 +710,8 @@ export class MessageHandler {
             // Check for conflicts and ensure unique ID
             let baseId = prototype.id;
 
-            // Add prefix for special app types
-            if (prototype?.type === 'docker') {
-                if (prototype.name?.toLowerCase().includes('kuksa')) {
-                    baseId = `kuksa-${prototype.id}`;
-                } else {
-                    baseId = `docker-${prototype.id}`;
-                }
-            }
+            // No automatic prefixing - use frontend ID directly
+            // Frontend is responsible for providing complete ID including any prefixes
 
             executionId = await this._ensureUniqueId(baseId);
             appId = executionId; // Both IDs are the same now
