@@ -1404,7 +1404,8 @@ export class MessageHandler {
                 entryPoint: appData.entryPoint || 'main.py',
                 env: appData.env || {},
                 workingDir: appData.workingDir || '/app',
-                vehicleId: appData.vehicleId || 'default-vehicle'
+                vehicleId: appData.vehicleId || 'default-vehicle',
+                config: appData.config ? JSON.parse(appData.config) : {}  // Include config for Docker apps
             };
 
             let result;
