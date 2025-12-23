@@ -962,8 +962,16 @@ export class EnhancedApplicationManager {
         if (detectedDeps && detectedDeps.length > 0) {
             // Create installation script first, then run the app
             const installCmd = `pip install ${detectedDeps.join(' ')}`;
-            pythonCode = `${installCmd} && echo "Dependencies installed: ${detectedDeps.join(', ')}" && python -c "${pythonCode.replace(/"/g, '\\"')}"`;
+            pythonCode = `${installCmd} && cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
+${pythonCode}
+PYTHON_EOF`;
             this.logger.info('Installing Python dependencies in container', { appId, dependencies: detectedDeps });
+        } else {
+            // No dependencies, write code to file and run it
+            pythonCode = `cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
+${pythonCode}
+PYTHON_EOF`;
+            this.logger.info('Running Python code directly without dependencies', { appId });
         }
 
         // Create container with inline Python code execution
