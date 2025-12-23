@@ -1194,7 +1194,7 @@ export class EnhancedApplicationManager {
         const sanitizedName = this._sanitizeAppIdForDocker(appId);
 
         const containerConfig = {
-            Image: isDockerImage ? binaryPath : 'alpine:latest',
+            Image: isDockerImage ? binaryPath : 'ubuntu:22.04',
             WorkingDir: isDockerImage ? '/app' : workingDir,
             Cmd: isDockerImage ? (args || []) : [binaryPath, ...args],
             Env: [
@@ -1205,7 +1205,7 @@ export class EnhancedApplicationManager {
             HostConfig: {
                 Binds: isDockerImage ?
                     (volumes ? Object.entries(volumes).map(([hostPath, containerPath]) => `${hostPath}:${containerPath}`) : []) :
-                    [`${path.resolve(appDir)}:${workingDir}`],
+                    [`/var/lib/docker/volumes/vehicle-edge-data/_data/applications/${appId}:${workingDir}`],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
                 NetworkMode: 'host',

@@ -5,6 +5,8 @@
 
 import { Logger } from '../utils/Logger.js';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs/promises';
+import path from 'path';
 
 export class MessageHandler {
     constructor(runtime) {
@@ -692,7 +694,25 @@ export class MessageHandler {
     }
 
     async handleDeployRequest(message) {
-        const { code, prototype, vehicleId, language } = message;
+        let { code, prototype, vehicleId, language, binary } = message;
+
+        // For binary deployments, use the binary field
+        if (binary && !code) {
+            code = binary;
+        }
+
+        // DEBUG: Log all top-level message fields
+        this.logger.info('DEBUG: Message fields', {
+            messageKeys: Object.keys(message).join(', '),
+            hasCode: !!code,
+            codeType: typeof code,
+            codeLength: code?.length,
+            hasBinary: !!binary,
+            binaryType: typeof binary,
+            binaryLength: binary?.length,
+            hasPrototype: !!prototype,
+            prototypeKeys: prototype ? Object.keys(prototype).join(', ') : 'no prototype'
+        });
 
         this.logger.info('Processing deploy request', {
             appId: prototype?.id || 'unknown',
@@ -731,6 +751,18 @@ export class MessageHandler {
             // For simplified runtime, deploy_request just runs the app directly
             // Frontend handles the code conversion
 
+            // DEBUG: Log incoming message details
+            this.logger.info('DEBUG: Deploy request details', {
+                hasCode: !!code,
+                codeLength: code?.length,
+                codePreview: code?.substring(0, 100),
+                prototypeType: prototype?.type,
+                prototypeLanguage: prototype?.language,
+                messageLanguage: language,
+                prototypeKeys: prototype ? Object.keys(prototype).join(', ') : 'no prototype',
+                prototypeConfig: prototype?.config ? JSON.stringify(prototype.config) : 'no config'
+            });
+
             // First validate the code before creating any database entries
             let appType;
             if (prototype?.type === 'docker') {
@@ -757,8 +789,23 @@ export class MessageHandler {
             } else if (code && code.trim().length > 0) {
                 // Handle as binary deployment
                 appType = 'binary';
+            } else if (prototype?.type === 'binary' || prototype?.config?.binaryPath || prototype?.config?.dockerImage) {
+                // Handle binary deployment with config-based path
+                appType = 'binary';
+                code = code || prototype?.config?.binaryPath || prototype?.config?.dockerImage || '';
+                this.logger.info('Binary deployment detected via config', {
+                    binaryPath: prototype?.config?.binaryPath,
+                    dockerImage: prototype?.config?.dockerImage,
+                    usingCode: !!code
+                });
             } else {
                 // No valid code provided
+                this.logger.error('No valid code or configuration provided for deployment', {
+                    hasCode: !!code,
+                    codeLength: code?.length,
+                    prototypeType: prototype?.type,
+                    prototypeConfig: prototype?.config
+                });
                 return {
                     type: 'deploy_request-response',
                     id: message.id,
@@ -787,13 +834,13 @@ export class MessageHandler {
                 updated_at: new Date().toISOString(),
                 // Required database fields - set different defaults for Docker apps
                 entry_point: appType === 'docker' ? null : 'main.py',
-                binary_path: appType === 'docker' ? null : `/tmp/app-data-${appId}/main`,
+                binary_path: appType === 'docker' ? null : `/app/main`,
                 args: JSON.stringify([]),
                 env: JSON.stringify({}),
                 working_dir: appType === 'docker' ? null : '/app',
                 python_deps: JSON.stringify([]),
                 vehicle_signals: JSON.stringify([]),
-                data_path: appType === 'docker' ? null : `/tmp/app-data-${appId}`,
+                data_path: appType === 'docker' ? null : `/app/data/applications/${appId}`,
                 config: JSON.stringify({
                     deployment_method: 'direct_websocket',
                     deployment_source: 'WebSocket_API',
@@ -853,10 +900,38 @@ export class MessageHandler {
                 });
             } else {
                 // Handle as binary deployment
+                // Binary data is in the 'code' variable (from the 'binary' field)
+                // Write binary to file before deployment
+                const appDir = `/app/data/applications/${appId}`;
+                await fs.mkdir(appDir, { recursive: true });
+
+                // Write binary to appDir so it will be mounted into container
+                const binaryFilePath = path.join(appDir, 'main');
+                const containerBinaryPath = '/app/main'; // Inside container, appDir is mounted at /app
+
+                // Decode base64 and write to file
+                try {
+                    const binaryBuffer = Buffer.from(code, 'base64');
+                    await fs.writeFile(binaryFilePath, binaryBuffer, { mode: 0o755 });
+                    this.logger.info('Binary file written', {
+                        appId,
+                        binaryFilePath,
+                        containerBinaryPath,
+                        size: binaryBuffer.length
+                    });
+                } catch (writeError) {
+                    this.logger.error('Failed to write binary file', {
+                        appId,
+                        error: writeError.message
+                    });
+                    throw new Error(`Failed to write binary file: ${writeError.message}`);
+                }
+
                 result = await this.runtime.appManager.runBinaryApp({
                     executionId,
                     appId,
-                    binaryPath: code, // Assume code contains binary path or URL
+                    binaryPath: containerBinaryPath,
+                    appDir: appDir,
                     args: [],
                     env: {
                         APP_NAME: prototype?.name || 'Deployed App'
