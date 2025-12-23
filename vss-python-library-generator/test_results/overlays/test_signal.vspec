@@ -1,0 +1,8 @@
+Vehicle:
+  type: branch
+
+Vehicle.TestSensor:
+  type: sensor
+  datatype: float
+  description: Test sensor for validation
+  unit: celsius

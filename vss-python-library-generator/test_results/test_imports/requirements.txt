@@ -1,0 +1,11 @@
+# Runtime dependencies for generated vehicle library
+velocitas-sdk==0.14.1
+cloudevents==1.11.0
+kuksa_client==0.4.3
+grpcio==1.64.1
+grpcio-tools==1.64.1
+protobuf==5.27.3
+aiohttp==3.9.3
+python-socketio==5.11.3
+async-timeout==4.0.3
+attrs==24.2.0

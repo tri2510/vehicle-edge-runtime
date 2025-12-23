@@ -1,0 +1,66 @@
+#
+# (C) 2018 Volvo Cars
+# (C) 2016 Jaguar Land Rover
+#
+# All files and artifacts in this repository are licensed under the
+# provisions of the license provided by the LICENSE file in this repository.
+#
+
+#
+# All interior lights and sensors
+#
+
+IsGloveBoxOn:
+  datatype: boolean
+  type: actuator
+  description: Is glove box light on
+
+IsTrunkOn:
+  datatype: boolean
+  type: actuator
+  description: Is trunk light light on
+
+IsDomeOn:
+  datatype: boolean
+  type: actuator
+  description: Is central dome light light on
+
+AmbientLight:
+  datatype: uint8
+  type: sensor
+  unit: percent
+  min: 0
+  max: 100
+  description: How much ambient light is detected in cabin. 0 = No ambient light. 100 = Full brightness
+
+LightIntensity:
+  datatype: uint8
+  type: sensor
+  unit: percent
+  min: 0
+  max: 100
+  description: Intensity of the interior lights. 0 = Off. 100 = Full brightness.
+
+#
+# First / front row lights
+#
+Spotlight:
+  type: branch
+  instances: Row[1,4]
+  description: Spotlight for a specific area in the vehicle.
+
+Spotlight.IsSharedOn:
+  datatype: boolean
+  type: sensor
+  description: Is a shared light across a specific row on
+
+Spotlight.IsLeftOn:
+  datatype: boolean
+  type: actuator
+  description: Is light on the left side switched on
+
+
+Spotlight.IsRightOn:
+  datatype: boolean
+  type: actuator
+  description: Is light on the right side switched on

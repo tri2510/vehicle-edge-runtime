@@ -40,6 +40,9 @@ export class EnhancedApplicationManager {
         await fs.ensureDir(path.join(this.appStorage, 'dependencies'));
         await fs.ensureDir(path.join(this.appStorage, 'signal-libs'));
 
+        // Copy VSS vehicle library to shared volume
+        await this._initializeVehicleLibrary();
+
         // Load existing applications from database into memory
         await this._loadApplicationsFromDatabase();
 
@@ -50,6 +53,36 @@ export class EnhancedApplicationManager {
         await this._initializeResourceMonitoring();
 
         this.logger.info('Enhanced Application Manager initialized');
+    }
+
+    /**
+     * Copy VSS vehicle library to shared Docker volume for Python containers
+     */
+    async _initializeVehicleLibrary() {
+        const vehicleLibSource = '/app/vss-python-library-generator/output';
+        const vehicleLibDest = path.join(this.appStorage, 'vehicle-library');
+
+        try {
+            this.logger.info('Initializing VSS vehicle library', { source: vehicleLibSource, dest: vehicleLibDest });
+
+            // Check if source exists (it's baked into the Docker image)
+            const sourceExists = await fs.pathExists(vehicleLibSource);
+            if (!sourceExists) {
+                this.logger.warn('VSS vehicle library source not found in Docker image', { path: vehicleLibSource });
+                return;
+            }
+
+            // Create destination directory
+            await fs.ensureDir(vehicleLibDest);
+
+            // Copy vehicle library files
+            await fs.copy(vehicleLibSource, vehicleLibDest, { overwrite: false });
+
+            this.logger.info('VSS vehicle library copied to shared volume', { dest: vehicleLibDest });
+        } catch (error) {
+            this.logger.error('Failed to copy VSS vehicle library', { error: error.message });
+            // Don't fail initialization, just log the error
+        }
     }
 
     setRuntime(runtime) {
@@ -959,19 +992,24 @@ export class EnhancedApplicationManager {
 
         // Build command with dependency installation
         let cmd;
+
+        // Always install vehicle library dependencies if they exist
+        const vehicleLibReqs = '/app/vehicle-lib/requirements.txt';
+        const installVehicleLibCmd = `if [ -f ${vehicleLibReqs} ]; then pip install -r ${vehicleLibReqs}; fi`;
+
         if (detectedDeps && detectedDeps.length > 0) {
-            // Create installation script first, then run the app
+            // Install vehicle library dependencies + app-specific dependencies, then run the app
             const installCmd = `pip install ${detectedDeps.join(' ')}`;
-            pythonCode = `${installCmd} && cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
+            pythonCode = `${installVehicleLibCmd} && ${installCmd} && cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
 ${pythonCode}
 PYTHON_EOF`;
-            this.logger.info('Installing Python dependencies in container', { appId, dependencies: detectedDeps });
+            this.logger.info('Installing vehicle library and Python dependencies in container', { appId, dependencies: detectedDeps });
         } else {
-            // No dependencies, write code to file and run it
-            pythonCode = `cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
+            // Only install vehicle library dependencies, then run the app
+            pythonCode = `${installVehicleLibCmd} && cat <<'PYTHON_EOF' > /tmp/app.py && python /tmp/app.py
 ${pythonCode}
 PYTHON_EOF`;
-            this.logger.info('Running Python code directly without dependencies', { appId });
+            this.logger.info('Installing vehicle library dependencies in container', { appId });
         }
 
         // Create container with inline Python code execution
@@ -981,14 +1019,18 @@ PYTHON_EOF`;
             Cmd: ['sh', '-c', pythonCode],
             Env: [
                 'PYTHONUNBUFFERED=1',
-                'PYTHONPATH=/app/dependencies:/tmp',
+                'PYTHONPATH=/app/vehicle-lib:/app/dependencies:/tmp',
+                'KUKSA_DATA_BROKER_ADDR=127.0.0.1',  // For Velocitas SDK
+                'KUKSA_DATA_BROKER_PORT=55555',      // For Velocitas SDK
                 'APP_ID=' + appId,
                 'EXECUTION_ID=' + actualExecutionId,
                 ...Object.entries(env).map(([key, value]) => `${key}=${value}`)
             ],
             HostConfig: {
-                // Only mount dependencies directory for libraries
+                // Mount vehicle library from Docker volume and app-specific dependencies
+                // Use the Docker volume mount path which is accessible from the host
                 Binds: [
+                    `/var/lib/docker/volumes/vehicle-edge-data/_data/applications/vehicle-library:/app/vehicle-lib:ro`,
                     `${path.join(this.appStorage, 'dependencies', appId)}:/app/dependencies:ro`
                 ],
                 Memory: 512 * 1024 * 1024,

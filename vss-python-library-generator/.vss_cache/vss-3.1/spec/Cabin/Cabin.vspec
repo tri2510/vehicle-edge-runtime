@@ -1,0 +1,189 @@
+#
+# (C) 2018 Volvo Cars
+# (C) 2016 Jaguar Land Rover
+#
+# All files and artifacts in this repository are licensed under the
+# provisions of the license provided by the LICENSE file in this repository.
+#
+
+#
+# All in-cabin originated signals and attributes
+#
+
+##
+# Rear window shade signals
+##
+RearShade:
+  type: branch
+  description: Rear window shade.
+
+# Include the same shade spec used for sunroof and side windows.
+#include SingleShade.vspec RearShade
+
+##
+# HVAC signals
+##
+HVAC:
+  type: branch
+  description: Climate control
+#include HVAC.vspec HVAC
+
+##
+# Infotainment
+##
+Infotainment:
+  type: branch
+  description: Infotainment system.
+
+
+#include Infotainment.vspec Infotainment
+
+##
+# Sunroof status
+##
+Sunroof:
+  type: branch
+  description: Sun roof status.
+
+Sunroof.Position:
+  datatype: int8
+  type: sensor
+  min: -100
+  max: 100
+  description: Sunroof position. 0 = Fully closed 100 = Fully opened. -100 = Fully tilted.
+
+#
+# Sunroof controlling switch.
+# We cannot use SingleSliderSwitch.vspec since we have TiltUp and TiltDown also
+Sunroof.Switch:
+  datatype: string
+  type: actuator
+  allowed: ['INACTIVE', 'CLOSE', 'OPEN', 'ONE_SHOT_CLOSE', 'ONE_SHOT_OPEN', 'TILT_UP', 'TILT_DOWN']
+  description: Switch controlling sliding action such as window, sunroof, or shade.
+
+Sunroof.Shade:
+  type: branch
+  description: Sun roof shade status.
+
+# Include shade specification also used by side and rear window.
+#include SingleShade.vspec Sunroof.Shade
+
+#
+# Rearview mirror signals
+#
+RearviewMirror:
+  type: branch
+  description: Rearview mirror.
+
+RearviewMirror.DimmingLevel:
+  datatype: uint8
+  type: actuator
+  unit: percent
+  max: 100
+  description: Dimming level of rearview mirror. 0 = undimmed. 100 = fully dimmed.
+
+
+##
+# Interior lights signals and sensors
+##
+Lights:
+  type: branch
+  description: Interior lights signals and sensors.
+
+# Include the lights specification and attach it under the Lights branch.x
+#include InteriorLights.vspec Lights
+
+##
+# Door signals and attributes
+# The default VSS (i.e. this file) assumes a vehicle with two rows of doors
+# with two doors in front row and two doors in second row.
+# For real deployments this needs to be overridden with actual values
+# Row1 is the frontmost row.
+# Row2-RowX are subsequent rows of doors.
+#
+# Note that rear door (for hatchback and station wagons) shall typically not be represented
+# as a door, but rather be represented as a trunk (Vehicle.Body.Trunk) and
+# rear shade (Vehicle.Cabin.RearShade)
+##
+Door:
+  type: branch
+  instances:
+    - Row[1,2]
+    - ["Left","Right"]
+  description: All doors, including windows and switches.
+#include SingleDoor.vspec Door
+
+# Default value based on instance declaration above with 2 rows and 2 doors in each row.
+DoorCount:
+  datatype: uint8
+  type: attribute
+  default: 4
+  description: Number of doors in vehicle.
+
+
+
+##
+# Seat signals and attributes
+# The default VSS (i.e. this file) assumes a vehicle with two rows of seats
+# with two seats in front row and three seats in second row.
+# For real deployments this needs to be overridden with actual values
+# Row1 is the frontmost row.
+# Row2-RowX are subsequent rows of seats.
+#
+# Within each row there are up to Y seat positions
+# Pos1 is leftmost.
+# PosY is rightmost.
+#
+# The value of Y shall consider the row with most number of seats in the vehicle.
+# If a vehicle e.g. have 2 seats in front row and 3 seats in second row, then Pos
+# shall be defined as Pos[1,3]
+# Which seats that actually exist can be defined by SeatPosCount
+##
+
+Seat:
+  type: branch
+  instances:
+    - Row[1,2]
+    - Pos[1,3]
+  description: All seats.
+#include SingleSeat.vspec Seat
+
+#
+# Seat attributes.
+#
+DriverPosition:
+  datatype: uint8
+  type: attribute
+  default: 1
+  description: The position of the driver seat in row 1.
+  comment: Default value is position 1, i.e. a typical LHD vehicle.
+
+SeatRowCount:
+  datatype: uint8
+  type: attribute
+  default: 2
+  description: Number of seat rows in vehicle.
+  comment: Default value corresponds to two rows of seats.
+
+
+SeatPosCount:
+  datatype: uint8[]
+  type: attribute
+  default: [2, 3]
+  description: Number of seats across each row from the front to the rear.
+  comment: Default value corresponds to two seats in front row and 3 seats in second row.
+
+##
+# Convertible roof status
+##
+Convertible:
+  type: branch
+  description: Convertible roof.
+
+Convertible.Status:
+  datatype: string
+  type: sensor
+  allowed: ['UNDEFINED', 'CLOSED', 'OPEN', 'CLOSING', 'OPENING', 'STALLED']
+  description: Roof status on convertible vehicles.
+
+#include include/PowerOptimize.vspec

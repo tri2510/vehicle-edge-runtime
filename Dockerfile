@@ -36,6 +36,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=vehicle-edge:nodejs src/ ./src/
 COPY --chown=vehicle-edge:nodejs proto/ ./proto/
 
+# Copy VSS Python library generator (for vehicle signal library)
+COPY --chown=vehicle-edge:nodejs vss-python-library-generator/ ./vss-python-library-generator/
+
 # Create data directories
 RUN mkdir -p /app/data/applications /app/data/logs /app/data/configs && \
     chown -R vehicle-edge:nodejs /app/data
