@@ -17,7 +17,7 @@ export class MockServiceManager {
         this.docker = new Docker();
         this.containerName = 'VEA-mock-service';
         this.imageName = 'vehicle-simple-mock-service:latest';
-        this.appId = 'vea-mock-service';
+        this.appId = 'mock-service';
         this.appType = 'mock-service';
         this.db = null; // Will be set by setDatabase()
     }
