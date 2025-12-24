@@ -102,11 +102,15 @@ export class MockServiceManager {
         this.logger.info('Starting mock service', { mode, signals, kuksaHost, kuksaPort });
 
         try {
-            // Check if image exists, build if not
+            // Check if image exists
             const imageExists = await this._checkImageExists();
             if (!imageExists) {
-                this.logger.info('Mock service image not found, building...', { image: this.imageName });
-                await this.buildImage();
+                this.logger.error('Mock service image not found', { image: this.imageName });
+                throw new Error(
+                    `Docker image '${this.imageName}' not found. ` +
+                    `Please build it first with: ` +
+                    `docker build -t ${this.imageName} -f ./services/mock-service/Dockerfile.simple ./services/mock-service`
+                );
             }
 
             // Check if container already exists
