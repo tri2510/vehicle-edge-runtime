@@ -46,6 +46,9 @@ export class DatabaseManager {
             // Create tables
             await this._createTables();
 
+            // Migrate existing databases to support new app types
+            await this._migrateAppTypes();
+
             this.logger.info('Database initialized successfully');
         } catch (error) {
             this.logger.error('Failed to initialize database', { error: error.message });
@@ -71,7 +74,7 @@ export class DatabaseManager {
                 name TEXT NOT NULL,
                 version TEXT,
                 description TEXT,
-                type TEXT CHECK (type IN ('python', 'binary', 'docker')) NOT NULL,
+                type TEXT CHECK (type IN ('python', 'binary', 'docker', 'mock-service', 'kuksa-server')) NOT NULL,
                 status TEXT DEFAULT 'installed' CHECK (
                     status IN ('installing', 'installed', 'starting', 'running', 'paused', 'stopped', 'uninstalling', 'error')
                 ),
@@ -476,5 +479,94 @@ export class DatabaseManager {
         await this.initialize();
 
         this.logger.info('Database restored from backup', { backupPath });
+    }
+
+    /**
+     * Migrate existing databases to support new app types
+     * This modifies the CHECK constraint to allow 'mock-service' and 'kuksa-server' types
+     */
+    async _migrateAppTypes() {
+        try {
+            // SQLite doesn't support ALTER TABLE to modify constraints directly
+            // So we need to recreate the table
+
+            // Check if migration is needed by checking if mock-service type exists
+            const tableInfo = await this.db.all("PRAGMA table_info(apps)");
+            const typeColumn = tableInfo.find(col => col.name === 'type');
+
+            if (!typeColumn) {
+                return;
+            }
+
+            // Try to insert a test record with mock-service type to see if constraint allows it
+            // If it fails, we need to migrate
+            try {
+                await this.db.run(
+                    "INSERT INTO apps (id, name, type, status) VALUES ('__migration_test__', 'Migration Test', 'mock-service', 'installed')"
+                );
+                // If successful, clean up test record
+                await this.db.run("DELETE FROM apps WHERE id = '__migration_test__'");
+                this.logger.debug('App type constraint already supports mock-service');
+                return;
+            } catch (error) {
+                if (error.message.includes('CHECK constraint failed')) {
+                    this.logger.info('Migrating app type constraint to support new types');
+                } else {
+                    return;
+                }
+            }
+
+            // Get existing data
+            const existingData = await this.db.all("SELECT * FROM apps");
+
+            // Rename old table
+            await this.db.exec("ALTER TABLE apps RENAME TO apps_old");
+
+            // Create new table with updated constraint
+            await this.db.exec(`
+                CREATE TABLE IF NOT EXISTS apps (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    version TEXT,
+                    description TEXT,
+                    type TEXT CHECK (type IN ('python', 'binary', 'docker', 'mock-service', 'kuksa-server')) NOT NULL,
+                    status TEXT DEFAULT 'installed' CHECK (
+                        status IN ('installing', 'installed', 'starting', 'running', 'paused', 'stopped', 'uninstalling', 'error')
+                    ),
+                    config TEXT,
+                    code TEXT,
+                    entry_point TEXT,
+                    binary_path TEXT,
+                    args TEXT,
+                    env TEXT,
+                    working_dir TEXT,
+                    vehicle_signals TEXT,
+                    python_deps TEXT,
+                    data_path TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Copy data back
+            for (const row of existingData) {
+                const columns = Object.keys(row).join(', ');
+                const placeholders = Object.keys(row).map(() => '?').join(', ');
+                const values = Object.values(row);
+
+                await this.db.run(
+                    `INSERT INTO apps (${columns}) VALUES (${placeholders})`,
+                    values
+                );
+            }
+
+            // Drop old table
+            await this.db.exec("DROP TABLE apps_old");
+
+            this.logger.info('App type constraint migration completed');
+
+        } catch (error) {
+            this.logger.warn('App type migration failed (might be already migrated)', { error: error.message });
+        }
     }
 }
