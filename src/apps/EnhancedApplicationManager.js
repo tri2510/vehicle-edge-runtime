@@ -954,6 +954,16 @@ export class EnhancedApplicationManager {
      * @returns {string} Sanitized name suitable for Docker containers
      */
     _sanitizeAppIdForDocker(appId) {
+        // If app ID already starts with VEA-, keep it as is (already properly formatted)
+        if (appId.startsWith('VEA-')) {
+            return appId
+                .replace(/[^a-zA-Z0-9_-]/g, '-') // Replace invalid chars with hyphens
+                .replace(/-+/g, '-') // Replace multiple hyphens with single
+                .replace(/^-|-$/g, '') // Remove leading/trailing hyphens
+                .substring(0, 50); // Limit length to avoid Docker name limits
+        }
+
+        // For user apps without VEA- prefix, lowercase and add prefix
         return appId
             .toLowerCase() // Docker names should be lowercase
             .replace(/[^a-z0-9_-]/g, '-') // Replace invalid chars with hyphens
