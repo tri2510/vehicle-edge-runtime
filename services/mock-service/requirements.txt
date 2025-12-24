@@ -1,0 +1,17 @@
+# Mock Service Requirements
+
+# Kuksa client
+kuksa-client>=0.4.3
+
+# gRPC
+grpcio>=1.64.0
+grpcio-tools>=1.64.0
+
+# Protobuf
+protobuf>=5.27.0
+
+# Async support
+asyncio-mqtt>=0.14.0
+
+# Logging
+structlog>=23.2.0

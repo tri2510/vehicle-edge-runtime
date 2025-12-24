@@ -96,6 +96,36 @@ services:
       - vehicle-edge-network
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
 
+  # Optional: Mock Service (for testing/development)
+  mock-service:
+    build:
+      context: ./services/mock-service
+      dockerfile: Dockerfile
+    container_name: vehicle-mock-service
+    profiles:
+      - mock  # Only start with --profile mock
+    depends_on:
+      kuksa-databroker:
+        condition: service_healthy
+    environment:
+      - KUKSA_HOST=kuksa-databroker
+      - KUKSA_PORT=55555
+      - MOCK_SIGNAL=/app/signals.json
+      - MOCK_IDLE_THRESHOLD=30.0
+      - MOCK_BASE_SLEEP=0.1
+      - MOCK_IDLE_SLEEP=1.0
+    volumes:
+      - ./services/mock-service/signals.json:/app/signals.json:ro
+    restart: unless-stopped
+    networks:
+      - vehicle-edge-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
 volumes:
   redis-data:
 

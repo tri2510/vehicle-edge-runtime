@@ -49,6 +49,7 @@ show_usage() {
 	echo "Profiles:"
 	echo "  base     - Runtime only (default)"
 	echo "  kuksa    - Runtime + local Kuksa databroker"
+	echo "  mock     - Runtime + Kuksa + Mock Service (testing)"
 	echo "  redis    - Runtime + Redis caching"
 	echo "  full     - Runtime + Kuksa + Redis"
 	echo ""
@@ -189,12 +190,16 @@ deploy_services() {
 			if [[ "$docker_compose_file" == *"new"* ]]; then
 				$docker_compose_cmd -f "$docker_compose_file" --profile local-kuksa --profile redis up -d $build_flag
 			else
-				$docker_compose_cmd -f "$docker_compose_file" --profile kuksa --profile redis up -d $build_flag
+				$docker_compose_cmd -f "$docker_compose_file" --profile local-kuksa --profile redis up -d $build_flag
 			fi
 			;;
 		kuksa)
 			log "Deploying with local Kuksa..."
 			$docker_compose_cmd -f "$docker_compose_file" --profile local-kuksa up -d $build_flag
+			;;
+		mock)
+			log "Deploying with Mock Service for testing..."
+			$docker_compose_cmd -f "$docker_compose_file" --profile local-kuksa --profile mock up -d $build_flag
 			;;
 		redis)
 			log "Deploying with Redis..."
@@ -233,8 +238,12 @@ show_service_info() {
 	echo "  • WebSocket API: ws://localhost:3002/runtime"
 	echo "  • Health Check:  http://localhost:3003/health"
 
-	if [[ "$PROFILE" == "full" || "$PROFILE" == "kuksa" ]]; then
+	if [[ "$PROFILE" == "full" || "$PROFILE" == "kuksa" || "$PROFILE" == "mock" ]]; then
 		echo "  • Kuksa Web UI:  http://localhost:55555"
+	fi
+
+	if [[ "$PROFILE" == "mock" ]]; then
+		echo "  • Mock Service:  Running (providing simulated vehicle data)"
 	fi
 
 	if [[ "$PROFILE" == "full" || "$PROFILE" == "redis" ]]; then
