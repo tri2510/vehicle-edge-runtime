@@ -47,7 +47,8 @@ export class DatabaseManager {
             await this._createTables();
 
             // Migrate existing databases to support new app types
-            await this._migrateAppTypes();
+            // TODO: Enable migration after testing
+            // await this._migrateAppTypes();
 
             this.logger.info('Database initialized successfully');
         } catch (error) {
