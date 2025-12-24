@@ -71,6 +71,24 @@ export class MockServiceManager {
     }
 
     /**
+     * Check if Docker image exists
+     */
+    async _checkImageExists() {
+        try {
+            const image = this.docker.getImage(this.imageName);
+            await image.inspect();
+            return true;
+        } catch (error) {
+            if (error.statusCode === 404) {
+                return false;
+            }
+            // Other error, assume image might exist
+            this.logger.warn('Error checking image existence', { error: error.message });
+            return false;
+        }
+    }
+
+    /**
      * Start mock service with specified configuration
      */
     async start(config = {}) {
@@ -84,6 +102,13 @@ export class MockServiceManager {
         this.logger.info('Starting mock service', { mode, signals, kuksaHost, kuksaPort });
 
         try {
+            // Check if image exists, build if not
+            const imageExists = await this._checkImageExists();
+            if (!imageExists) {
+                this.logger.info('Mock service image not found, building...', { image: this.imageName });
+                await this.buildImage();
+            }
+
             // Check if container already exists
             const existingContainer = this.docker.getContainer(this.containerName);
             try {

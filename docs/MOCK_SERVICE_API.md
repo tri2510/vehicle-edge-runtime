@@ -41,6 +41,8 @@ Service runs but doesn't update any signals.
 
 All mock service control messages use the WebSocket connection to the vehicle-edge-runtime.
 
+**Auto-Build Feature**: If the Docker image doesn't exist when starting the mock service, it will be automatically built. This happens transparently on the first start.
+
 ### Get Mock Service Status
 
 Get current status of the mock service.
