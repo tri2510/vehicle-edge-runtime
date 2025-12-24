@@ -124,6 +124,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
             await this.consoleManager.initialize();
             this.consoleManager.setRuntime(this);
 
+            // Initialize Mock Service Manager with database
+            this.mockServiceManager.setDatabase(this.dbManager);
+            await this.mockServiceManager.ensureDatabaseEntry();
+
             // Initialize Kuksa Manager (if not skipped)
             if (!this.options.skipKuksa) {
                 await this.kuksaManager.initialize();

@@ -1033,35 +1033,8 @@ export class MessageHandler {
                 exit_code: app.exitCode || null
             }));
 
-            // Add mock service to the list if it exists
-            if (this.runtime.mockServiceManager) {
-                try {
-                    const mockServiceStatus = await this.runtime.mockServiceManager.getStatus();
-                    if (mockServiceStatus.status !== 'not-found') {
-                        apps.push({
-                            app_id: 'VEA-mock-service',
-                            name: 'VEA Mock Service',
-                            version: '1.0.0',
-                            status: mockServiceStatus.running ? 'running' : 'stopped',
-                            deploy_time: null,
-                            auto_start: true,
-                            description: `Vehicle signal mock service (${mockServiceStatus.mode} mode)`,
-                            type: 'mock-service',
-                            resources: {
-                                cpu_limit: '50%',
-                                memory_limit: '256MB'
-                            },
-                            container_id: mockServiceStatus.running ? 'VEA-mock-service' : null,
-                            pid: null,
-                            last_heartbeat: null,
-                            exit_code: null,
-                            mode: mockServiceStatus.mode
-                        });
-                    }
-                } catch (mockError) {
-                    this.logger.debug('Could not get mock service status', { error: mockError.message });
-                }
-            }
+            // Mock service is now in database and included in allApps above
+            // So we don't need to manually add it here anymore
 
             // Enhanced statistics for all lifecycle states
             const stats = {

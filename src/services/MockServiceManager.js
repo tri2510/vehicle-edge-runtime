@@ -1,6 +1,6 @@
 /**
  * Mock Service Manager
- * Manages the mock service container lifecycle and configuration
+ * Manages the mock service container lifecycle and configuration with database integration
  */
 
 import { Logger } from '../utils/Logger.js';
@@ -19,6 +19,91 @@ export class MockServiceManager {
         this.imageName = 'vehicle-simple-mock-service:latest';
         this.appId = 'VEA-mock-service';
         this.appType = 'mock-service';
+        this.db = null; // Will be set by setDatabase()
+    }
+
+    /**
+     * Set database manager for integration
+     */
+    setDatabase(db) {
+        this.db = db;
+        this.logger.info('Database manager set for MockServiceManager');
+    }
+
+    /**
+     * Ensure mock service exists in database
+     */
+    async ensureDatabaseEntry() {
+        if (!this.db) {
+            this.logger.warn('No database manager available');
+            return;
+        }
+
+        try {
+            // Check if app already exists in database
+            const existingApp = await this.db.getApplication(this.appId);
+
+            if (!existingApp) {
+                // Create database entry for mock service
+                await this.db.createApplication({
+                    id: this.appId,
+                    name: 'VEA Mock Service',
+                    version: '1.0.0',
+                    description: 'Vehicle signal mock service for testing without hardware',
+                    type: 'mock-service',
+                    code: '',
+                    entry_point: 'simple_mock.py',
+                    status: 'installed',
+                    vehicle_signals: [],
+                    python_deps: ['kuksa_client==0.4.3']
+                });
+
+                this.logger.info('Mock service registered in database', { appId: this.appId });
+            } else {
+                this.logger.debug('Mock service already in database', { appId: this.appId });
+            }
+        } catch (error) {
+            this.logger.error('Failed to ensure database entry', { error: error.message });
+        }
+    }
+
+    /**
+     * Update status in database
+     */
+    async updateDatabaseStatus(status, containerId = null) {
+        if (!this.db) {
+            return;
+        }
+
+        try {
+            const updateData = {
+                status: status
+            };
+
+            if (containerId) {
+                updateData.container_id = containerId;
+            }
+
+            await this.db.updateApplication(this.appId, updateData);
+            this.logger.debug('Database status updated', { appId: this.appId, status });
+        } catch (error) {
+            this.logger.error('Failed to update database status', { error: error.message });
+        }
+    }
+
+    /**
+     * Add log entry to database
+     */
+    async addDatabaseLog(level, message) {
+        if (!this.db) {
+            return;
+        }
+
+        try {
+            await this.db.addLog(this.appId, level, message, level);
+        } catch (error) {
+            this.logger.error('Failed to add log to database', { error: error.message });
+        }
     }
 
     /**
@@ -104,10 +189,17 @@ export class MockServiceManager {
         this.logger.info('Starting mock service', { mode, signals, kuksaHost, kuksaPort });
 
         try {
+            // Ensure database entry exists
+            await this.ensureDatabaseEntry();
+            await this.addDatabaseLog('status', `Starting mock service in ${mode} mode`);
+            await this.updateDatabaseStatus('starting');
+
             // Check if image exists
             const imageExists = await this._checkImageExists();
             if (!imageExists) {
                 this.logger.error('Mock service image not found', { image: this.imageName });
+                await this.addDatabaseLog('error', 'Docker image not found');
+                await this.updateDatabaseStatus('error');
                 throw new Error(
                     `Docker image '${this.imageName}' not found. ` +
                     `Please build it first with: ` +
@@ -121,6 +213,7 @@ export class MockServiceManager {
                 const info = await existingContainer.inspect();
                 if (info.State.Running) {
                     this.logger.warn('Mock service already running', { status: info.State.Status });
+                    await this.addDatabaseLog('warning', 'Mock service already running');
                     return {
                         success: false,
                         message: 'Mock service is already running',
@@ -130,6 +223,7 @@ export class MockServiceManager {
                 // Remove stopped container
                 await existingContainer.remove();
                 this.logger.info('Removed existing stopped container');
+                await this.addDatabaseLog('status', 'Removed existing stopped container');
             } catch (inspectError) {
                 // Container doesn't exist, continue
                 this.logger.debug('No existing container found');
@@ -169,6 +263,10 @@ export class MockServiceManager {
 
             this.logger.info('✅ Mock service started successfully', { mode, containerId: container.id });
 
+            // Update database
+            await this.updateDatabaseStatus('running', this.containerName);
+            await this.addDatabaseLog('status', `Mock service started in ${mode} mode`);
+
             return {
                 success: true,
                 message: `Mock service started in ${mode} mode`,
@@ -177,6 +275,8 @@ export class MockServiceManager {
 
         } catch (error) {
             this.logger.error('Failed to start mock service', { error: error.message });
+            await this.addDatabaseLog('error', `Failed to start: ${error.message}`);
+            await this.updateDatabaseStatus('error');
             throw error;
         }
     }
@@ -188,11 +288,18 @@ export class MockServiceManager {
         this.logger.info('Stopping mock service');
 
         try {
+            await this.addDatabaseLog('status', 'Stopping mock service');
+            await this.updateDatabaseStatus('stopping');
+
             const container = this.docker.getContainer(this.containerName);
             await container.stop({ t: 10 }); // 10 second grace period
             await container.remove();
 
             this.logger.info('✅ Mock service stopped and removed');
+
+            // Update database
+            await this.updateDatabaseStatus('stopped');
+            await this.addDatabaseLog('status', 'Mock service stopped successfully');
 
             return {
                 success: true,
@@ -202,6 +309,7 @@ export class MockServiceManager {
         } catch (error) {
             if (error.statusCode === 404) {
                 this.logger.warn('Mock service container not found', { error: error.message });
+                await this.updateDatabaseStatus('stopped');
                 return {
                     success: true,
                     message: 'Mock service was not running'
