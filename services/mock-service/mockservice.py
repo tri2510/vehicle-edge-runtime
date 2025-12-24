@@ -274,3 +274,45 @@ class MockService(BaseService):
             log.warning("Feeding %s failed", path, exc_info=True)
             self._connected = is_grpc_fatal_error(err)
             raise err
+
+
+def main():
+    """Main entry point for the mock service."""
+    # Get configuration from environment
+    databroker_host = os.getenv("KUKSA_HOST", "localhost")
+    databroker_port = os.getenv("KUKSA_PORT", "55555")
+    service_address = os.getenv("SERVICE_ADDRESS", "127.0.0.1:50053")
+
+    databroker_address = f"{databroker_host}:{databroker_port}"
+
+    log.info(f"Starting Mock Service...")
+    log.info(f"Data Broker: {databroker_address}")
+    log.info(f"Service Address: {service_address}")
+
+    # Create and run the mock service
+    mock_service = MockService(service_address, databroker_address)
+
+    # Set up signal handlers for graceful shutdown
+    def signal_handler(signum, frame):
+        log.info(f"Received signal {signum}, shutting down...")
+        event.set()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    # Run the main loop
+    try:
+        mock_service.main_loop()
+    except KeyboardInterrupt:
+        log.info("Keyboard interrupt received")
+        event.set()
+    except Exception as e:
+        log.error(f"Error in main loop: {e}", exc_info=True)
+        event.set()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    import sys
+    main()
