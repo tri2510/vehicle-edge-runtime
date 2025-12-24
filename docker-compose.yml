@@ -114,17 +114,37 @@ services:
       - MOCK_IDLE_THRESHOLD=30.0
       - MOCK_BASE_SLEEP=0.1
       - MOCK_IDLE_SLEEP=1.0
-    volumes:
-      - ./services/mock-service/signals.json:/app/signals.json:ro
-    restart: unless-stopped
     networks:
       - vehicle-edge-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
+
+  # Simple Mock Service (lightweight echo service)
+  # Use this for testing Python apps without vehicle hardware
+  simple-mock-service:
+    build:
+      context: ./services/mock-service
+      dockerfile: Dockerfile.simple
+    image: vehicle-simple-mock-service:latest
+    container_name: vehicle-simple-mock-service
+    profiles:
+      - simple-mock  # Start with: docker-compose --profile simple-mock up -d
+    network_mode: host  # Use host network to connect to Kuksa on localhost
+    environment:
+      - KUKSA_HOST=127.0.0.1
+      - KUKSA_PORT=55555
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 volumes:
   redis-data:

@@ -1,0 +1,36 @@
+# Vehicle Edge Runtime - Simple Mock Service Dockerfile
+# Echoes actuator target values to current values for testing
+
+FROM python:3.10-slim
+
+# Metadata
+LABEL maintainer="Vehicle Edge Runtime Team"
+LABEL description="Simple mock service for vehicle signal echo"
+
+# Set working directory
+WORKDIR /app
+
+# Copy simple mock service
+COPY simple_mock.py .
+
+# Install Python dependencies (kuksa_client - pure Python, no compilation needed)
+RUN pip install --no-cache-dir kuksa_client==0.4.3
+
+# Create non-root user
+RUN useradd -m -u 1001 mock && \
+    chown -R mock:mock /app
+
+# Switch to non-root user
+USER mock
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV KUKSA_HOST=127.0.0.1
+ENV KUKSA_PORT=55555
+
+# Health check - verifies service is running
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import sys; sys.exit(0)" || exit 1
+
+# Run the simple mock service
+CMD ["python", "simple_mock.py"]
