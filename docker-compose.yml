@@ -126,6 +126,8 @@ services:
 
   # Simple Mock Service (lightweight echo service)
   # Use this for testing Python apps without vehicle hardware
+  # Supports multiple modes: echo-all (default), echo-specific, random, static, off
+  # Configure mode via MOCK_MODE environment variable
   simple-mock-service:
     build:
       context: ./services/mock-service
@@ -138,6 +140,9 @@ services:
     environment:
       - KUKSA_HOST=127.0.0.1
       - KUKSA_PORT=55555
+      - MOCK_MODE=echo-all  # Options: echo-all, echo-specific, random, static, off
+      # - MOCK_SPECIFIC_SIGNALS=Vehicle.Body.Lights.Beam.Low.IsOn,Vehicle.ADAS.CruiseControl.SpeedSet  # For echo-specific mode
+      # - MOCK_RANDOM_INTERVAL=2.0  # For random mode (seconds)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]

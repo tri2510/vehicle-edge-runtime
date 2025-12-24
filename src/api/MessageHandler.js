@@ -167,6 +167,18 @@ export class MessageHandler {
             case 'get-runtime-info':
             case 'get_runtime_info':
                 return await this.handleGetRuntimeInfo(message);
+            case 'mock_service_start':
+            case 'mock-service-start':
+                return await this.handleMockServiceStart(message);
+            case 'mock_service_stop':
+            case 'mock-service-stop':
+                return await this.handleMockServiceStop(message);
+            case 'mock_service_status':
+            case 'mock-service-status':
+                return await this.handleMockServiceStatus(message);
+            case 'mock_service_configure':
+            case 'mock-service-configure':
+                return await this.handleMockServiceConfigure(message);
             case 'report_runtime_state':
                 return await this.handleReportRuntimeState(message);
             case 'smart_deploy':
@@ -2518,4 +2530,173 @@ CMD ["./${runCommand || 'app'}"]
         }
     }
 
-  }
+    /**
+     * Handle Mock Service Start
+     * Starts the mock service with specified configuration
+     */
+    async handleMockServiceStart(message) {
+        const { mode, signals, kuksaHost, kuksaPort } = message;
+
+        this.logger.info('Handling mock service start', { mode, signals, kuksaHost, kuksaPort });
+
+        try {
+            if (!this.runtime.mockServiceManager) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'Mock service manager not initialized',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            const result = await this.runtime.mockServiceManager.start({
+                mode: mode || 'echo-all',
+                signals: signals,
+                kuksaHost: kuksaHost || '127.0.0.1',
+                kuksaPort: kuksaPort || '55555'
+            });
+
+            return {
+                type: 'mock_service_status',
+                id: message.id,
+                success: result.success,
+                message: result.message,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to start mock service', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to start mock service: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Handle Mock Service Stop
+     * Stops the mock service
+     */
+    async handleMockServiceStop(message) {
+        this.logger.info('Handling mock service stop');
+
+        try {
+            if (!this.runtime.mockServiceManager) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'Mock service manager not initialized',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            const result = await this.runtime.mockServiceManager.stop();
+
+            return {
+                type: 'mock_service_status',
+                id: message.id,
+                success: result.success,
+                message: result.message,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to stop mock service', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to stop mock service: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Handle Mock Service Status
+     * Gets the current status of the mock service
+     */
+    async handleMockServiceStatus(message) {
+        this.logger.info('Handling mock service status request');
+
+        try {
+            if (!this.runtime.mockServiceManager) {
+                return {
+                    type: 'mock_service_status',
+                    id: message.id,
+                    running: false,
+                    status: 'manager-not-initialized',
+                    mode: null,
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            const status = await this.runtime.mockServiceManager.getStatus();
+
+            return {
+                type: 'mock_service_status',
+                id: message.id,
+                ...status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to get mock service status', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to get mock service status: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    /**
+     * Handle Mock Service Configure
+     * Configures and restarts the mock service with new settings
+     */
+    async handleMockServiceConfigure(message) {
+        const { mode, signals, kuksaHost, kuksaPort } = message;
+
+        this.logger.info('Handling mock service configure', { mode, signals, kuksaHost, kuksaPort });
+
+        try {
+            if (!this.runtime.mockServiceManager) {
+                return {
+                    type: 'error',
+                    id: message.id,
+                    error: 'Mock service manager not initialized',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            const result = await this.runtime.mockServiceManager.configure({
+                mode: mode || 'echo-all',
+                signals: signals,
+                kuksaHost: kuksaHost || '127.0.0.1',
+                kuksaPort: kuksaPort || '55555'
+            });
+
+            return {
+                type: 'mock_service_configured',
+                id: message.id,
+                success: result.success,
+                message: result.message,
+                configured: result.configured,
+                status: result.status,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to configure mock service', { error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to configure mock service: ' + error.message,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+}

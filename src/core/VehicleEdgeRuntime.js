@@ -18,6 +18,7 @@ import { CredentialManager } from '../vehicle/CredentialManager.js';
 import { Logger } from '../utils/Logger.js';
 import { HealthCheck } from '../utils/HealthCheck.js';
 import { DatabaseManager } from '../database/DatabaseManager.js';
+import { MockServiceManager } from '../services/MockServiceManager.js';
 import path from 'path';
 
 export class VehicleEdgeRuntime extends EventEmitter {
@@ -64,6 +65,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
         });
         this.credentialManager = new CredentialManager({
             credentialPath: `${this.options.dataPath}/configs/credentials.json`,
+            logLevel: this.options.logLevel
+        });
+        this.mockServiceManager = new MockServiceManager({
+            dataPath: this.options.dataPath,
             logLevel: this.options.logLevel
         });
         this.wsHandler = new WebSocketHandler(this);
