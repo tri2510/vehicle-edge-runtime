@@ -661,7 +661,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             switch (action) {
                 case 'start':
                     return await this.appManager.runBinaryApp({
-                        appId: 'kuksa-server',
+                        appId: 'VEA-kuksa-server',
                         vehicleId,
                         config: {
                             dockerImage: 'ghcr.io/eclipse-kuksa/kuksa-databroker:main',
@@ -682,15 +682,15 @@ export class VehicleEdgeRuntime extends EventEmitter {
                         }
                     });
                 case 'stop':
-                    return await this.appManager.stopApplication('kuksa-server');
+                    return await this.appManager.stopApplication('VEA-kuksa-server');
                 case 'restart':
-                    await this.appManager.stopApplication('kuksa-server');
+                    await this.appManager.stopApplication('VEA-kuksa-server');
                     return await this.appManager.runBinaryApp({
-                        appId: 'kuksa-server',
+                        appId: 'VEA-kuksa-server',
                         vehicleId
                     });
                 case 'status':
-                    const app = await this.appManager.getApplicationStatus('kuksa-server');
+                    const app = await this.appManager.getApplicationStatus('VEA-kuksa-server');
                     return {
                         status: app.status,
                         running: app.status === 'running',
@@ -719,8 +719,8 @@ export class VehicleEdgeRuntime extends EventEmitter {
      */
     async _ensureKuksaAppExists() {
         const kuksaAppData = {
-            id: 'kuksa-server',
-            name: 'Kuksa Data Broker',
+            id: 'VEA-kuksa-server',
+            name: 'VEA Kuksa Data Broker',
             description: 'Eclipse Kuksa vehicle signal databroker for VSS data access',
             version: '0.6.1-dev.0',
             type: 'binary',
