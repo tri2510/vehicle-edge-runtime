@@ -126,7 +126,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Initialize Mock Service Manager with database
             this.mockServiceManager.setDatabase(this.dbManager);
-            await this.mockServiceManager.ensureDatabaseEntry();
+            // Note: Mock service will be registered in database when deployed (not on startup)
 
             // Initialize Kuksa Manager (if not skipped)
             if (!this.options.skipKuksa) {
