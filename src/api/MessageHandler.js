@@ -24,13 +24,20 @@ export class MessageHandler {
             return uuidv4();
         }
 
+        // If ID starts with VEA-, preserve case
+        const preserveCase = id.startsWith('VEA-');
+
         // Remove or replace unsafe characters
         let sanitized = id
-            .toLowerCase()
-            .replace(/[^a-z0-9_-]/g, '_')  // Replace invalid chars with underscore
-            .replace(/^[^a-z0-9]/, '_')     // Ensure starts with alphanumeric
-            .replace(/[^a-z0-9]$/, '_')     // Ensure ends with alphanumeric
-            .substring(0, 63);              // Docker container name limit
+            .replace(/[^a-zA-Z0-9_-]/g, '_')  // Replace invalid chars with underscore
+            .replace(/^[^a-zA-Z0-9]/, '_')     // Ensure starts with alphanumeric
+            .replace(/[^a-zA-Z0-9]$/, '_')     // Ensure ends with alphanumeric
+            .substring(0, 63);                  // Docker container name limit
+
+        // Lowercase only if not VEA- prefixed
+        if (!preserveCase) {
+            sanitized = sanitized.toLowerCase();
+        }
 
         // Ensure not empty after sanitization
         if (!sanitized || sanitized === '_'.repeat(sanitized.length)) {
@@ -742,8 +749,10 @@ export class MessageHandler {
             // Check for conflicts and ensure unique ID
             let baseId = prototype.id;
 
-            // No automatic prefixing - use frontend ID directly
-            // Frontend is responsible for providing complete ID including any prefixes
+            // Add VEA- prefix for all apps
+            if (!baseId.startsWith('VEA-')) {
+                baseId = 'VEA-' + baseId;
+            }
 
             executionId = await this._ensureUniqueId(baseId);
             appId = executionId; // Both IDs are the same now
