@@ -43,7 +43,7 @@ All mock service control messages use the WebSocket connection to the vehicle-ed
 
 **Prerequisite**: The mock service Docker image must be built before starting the service:
 ```bash
-docker build -t vehicle-simple-mock-service:latest -f ./services/mock-service/Dockerfile.simple ./services/mock-service
+docker build -t VEA-mock-service:latest -f ./services/mock-service/Dockerfile.simple ./services/mock-service
 ```
 
 ### Get Mock Service Status
@@ -67,7 +67,7 @@ websocket.send(JSON.stringify(message));
   running: true,           // Whether container is running
   status: 'running',       // Container status
   mode: 'echo-all',        // Current mode
-  image: 'vehicle-simple-mock-service:latest',
+  image: 'VEA-mock-service:latest',
   timestamp: '2025-12-24T12:00:00.000Z'
 }
 ```
@@ -103,7 +103,7 @@ websocket.send(JSON.stringify(message));
     running: true,
     status: 'running',
     mode: 'echo-all',
-    image: 'vehicle-simple-mock-service:latest'
+    image: 'VEA-mock-service:latest'
   },
   timestamp: '2025-12-24T12:00:00.000Z'
 }
@@ -161,7 +161,7 @@ websocket.send(JSON.stringify(message));
     running: true,
     status: 'running',
     mode: 'random',
-    image: 'vehicle-simple-mock-service:latest'
+    image: 'VEA-mock-service:latest'
   },
   timestamp: '2025-12-24T12:00:00.000Z'
 }
@@ -292,25 +292,25 @@ docker compose --profile simple-mock up -d simple-mock-service
 
 ### Start with specific mode
 ```bash
-docker run -d --name vehicle-simple-mock-service \
+docker run -d --name VEA-mock-service \
   --network host \
   -e MOCK_MODE=random \
   -e MOCK_RANDOM_INTERVAL=5.0 \
   -e KUKSA_HOST=127.0.0.1 \
   -e KUKSA_PORT=55555 \
-  vehicle-simple-mock-service:latest
+  VEA-mock-service:latest
 ```
 
 ### Stop service
 ```bash
 docker compose --profile simple-mock down simple-mock-service
 # or
-docker stop vehicle-simple-mock-service
+docker stop VEA-mock-service
 ```
 
 ### View logs
 ```bash
-docker logs vehicle-simple-mock-service
+docker logs VEA-mock-service
 ```
 
 ## Supported Signals
@@ -377,7 +377,7 @@ startMockService({ mode: 'off' });
 
 ### Mock service not starting
 - Check if Kuksa is running: `docker ps | grep kuksa`
-- Check mock service logs: `docker logs vehicle-simple-mock-service`
+- Check mock service logs: `docker logs VEA-mock-service`
 - Verify network: Ensure using `--network host` or correct network configuration
 
 ### Values not being echoed

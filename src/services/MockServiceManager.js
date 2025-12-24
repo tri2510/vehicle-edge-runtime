@@ -15,8 +15,10 @@ export class MockServiceManager {
         this.options = options;
         this.logger = new Logger('MockServiceManager', options.logLevel);
         this.docker = new Docker();
-        this.containerName = 'vehicle-simple-mock-service';
+        this.containerName = 'VEA-mock-service';
         this.imageName = 'vehicle-simple-mock-service:latest';
+        this.appId = 'VEA-mock-service';
+        this.appType = 'mock-service';
     }
 
     /**

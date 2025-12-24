@@ -133,7 +133,7 @@ services:
       context: ./services/mock-service
       dockerfile: Dockerfile.simple
     image: vehicle-simple-mock-service:latest
-    container_name: vehicle-simple-mock-service
+    container_name: VEA-mock-service
     profiles:
       - simple-mock  # Start with: docker-compose --profile simple-mock up -d
     network_mode: host  # Use host network to connect to Kuksa on localhost
