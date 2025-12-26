@@ -1010,10 +1010,10 @@ export class MessageHandler {
             // Ensure we always have an array, even if no apps are deployed
             const appsArray = Array.isArray(allApps) ? allApps : [];
 
-            // Simplified: Use consistent ID mapping (executionId = appId for new apps)
+            // Use actual app ID, not executionId (executionId is per-run, app ID is persistent)
             const apps = appsArray.map(app => ({
-                app_id: app.executionId || app.id,  // Use executionId for running, fallback to appId
-                name: app.name || app.appId, // Use proper app name, fallback to appId
+                app_id: app.id || app.appId,  // Use actual app ID, not executionId
+                name: app.name || app.appId || app.id, // Use proper app name, fallback to appId
                 version: app.version || '1.0.0',
                 status: app.status,
                 deploy_time: app.startTime || app.deployTime,
@@ -1156,6 +1156,108 @@ export class MessageHandler {
                 error: `Failed to ${action} application: ${error.message}`,
                 app_id,
                 action,
+                timestamp: new Date().toISOString()
+            };
+        }
+    }
+
+    async handleRunApp(message) {
+        const { appId } = message;
+
+        this.logger.info('Starting application', { appId });
+
+        try {
+            // Check if this is the mock service
+            if (appId === 'VEA-mock-service' || appId === 'mock-service') {
+                this.logger.info('Starting mock service', { appId });
+                const result = await this.runtime.mockServiceManager.start();
+                return {
+                    type: 'run_app-response',
+                    id: message.id,
+                    appId,
+                    status: 'started',
+                    message: 'Mock service started successfully',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Check current application status first
+            const currentStatus = await this.runtime.appManager.getApplicationStatus(appId);
+
+            if (currentStatus === 'running') {
+                return {
+                    type: 'run_app-response',
+                    id: message.id,
+                    appId,
+                    status: 'already_running',
+                    message: 'Application is already running',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // Check if the application exists in database
+            const appList = await this.runtime.appManager.listApplications({ id: appId });
+            if (appList.length === 0) {
+                throw new Error(`Application not found: ${appId}`);
+            }
+
+            const appInfo = appList[0];
+            this.logger.info('Found application in database', { appId, name: appInfo.name, type: appInfo.type });
+
+            const executionId = `restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+            let result;
+            if (appInfo.type === 'python') {
+                result = await this.runtime.appManager.runPythonApp({
+                    appId: appInfo.id,
+                    code: appInfo.code,
+                    entryPoint: appInfo.entry_point || 'main.py',
+                    env: appInfo.env || {},
+                    workingDir: appInfo.working_dir || '/app',
+                    vehicleId: 'default-vehicle',
+                    executionId
+                });
+            } else if (appInfo.type === 'binary') {
+                // Binary apps include Docker-based apps like Kuksa
+                // The config field contains dockerImage, exposedPorts, environment, args
+                const appConfig = appInfo.config ? JSON.parse(appInfo.config) : {};
+                result = await this.runtime.appManager.runBinaryApp({
+                    appId: appInfo.id,
+                    executionId,
+                    vehicleId: 'default-vehicle',
+                    config: appConfig
+                });
+            } else if (appInfo.type === 'docker') {
+                // Docker apps use dockerCommand in config
+                const appConfig = appInfo.config ? JSON.parse(appInfo.config) : {};
+                result = await this.runtime.appManager.runDockerApp({
+                    appId: appInfo.id,
+                    executionId,
+                    vehicleId: 'default-vehicle',
+                    config: appConfig,
+                    args: appConfig.dockerCommand || []
+                });
+            } else {
+                throw new Error(`Unsupported application type: ${appInfo.type}`);
+            }
+
+            return {
+                type: 'run_app-response',
+                id: message.id,
+                appId,
+                status: 'started',
+                message: 'Application started successfully',
+                executionId: result.executionId,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            this.logger.error('Failed to start app', { appId, error: error.message });
+            return {
+                type: 'error',
+                id: message.id,
+                error: 'Failed to start app: ' + error.message,
+                appId,
                 timestamp: new Date().toISOString()
             };
         }

@@ -424,7 +424,7 @@ export class EnhancedApplicationManager {
     }
 
     async runBinaryApp(options) {
-        const { appId, args, env, workingDir, vehicleId, config } = options;
+        const { appId, args, env, workingDir, vehicleId, config, executionId: providedExecutionId } = options;
 
         this.logger.info('Starting binary application', { appId, vehicleId, hasDockerImage: !!config?.dockerImage });
 
@@ -439,7 +439,8 @@ export class EnhancedApplicationManager {
                 throw new Error(`Application not installed: ${appId}`);
             }
 
-            const executionId = uuidv4();
+            // Use provided executionId if available, otherwise generate new one
+            const executionId = providedExecutionId || uuidv4();
 
             // Update status to starting
             await this.db.updateApplication(appId, {
@@ -584,7 +585,12 @@ export class EnhancedApplicationManager {
             resolvedAppId
         });
 
-        // Get app info from database
+        // Check if this is the mock service
+        if (resolvedAppId === 'VEA-mock-service' || resolvedAppId === 'mock-service') {
+            return await this.runtime.mockServiceManager.resume();
+        }
+
+        // Get app info from database (optional for resume - container might exist without DB record)
         let app = null;
         if (this.db) {
             try {
@@ -597,12 +603,9 @@ export class EnhancedApplicationManager {
             }
         }
 
-        if (!app) {
-            throw new Error(`Application not found in database: ${resolvedAppId}`);
-        }
-
-        // Check if app is paused
-        if (app.status !== 'paused') {
+        // Check if app is paused (only if we found it in the database)
+        // If app not in DB, we'll try to find the container and determine state from actual container
+        if (app && app.status !== 'paused') {
             throw new Error(`Application not paused: ${resolvedAppId} (current status: ${app.status})`);
         }
 
@@ -621,6 +624,7 @@ export class EnhancedApplicationManager {
         }
 
         // Fallback: try to find container by name if runtime_state is missing
+        let actualContainerState = null;
         if (!containerId) {
             try {
                 const containerName = this._sanitizeAppIdForDocker(resolvedAppId);
@@ -634,10 +638,12 @@ export class EnhancedApplicationManager {
 
                 if (info.State.Running || info.State.Paused) {
                     containerId = containerName;
+                    actualContainerState = info.State.Paused ? 'paused' : 'running';
                     this.logger.info('Found container by name', {
                         appId: resolvedAppId,
                         containerId,
-                        state: info.State.Status
+                        state: info.State.Status,
+                        paused: info.State.Paused
                     });
 
                     // Create runtime state record for future use
@@ -645,7 +651,7 @@ export class EnhancedApplicationManager {
                         try {
                             await this.db.updateRuntimeState(resolvedAppId, {
                                 container_id: containerId,
-                                current_state: info.State.Status,
+                                current_state: actualContainerState,
                                 last_heartbeat: new Date().toISOString()
                             });
                             this.logger.info('Created runtime state record', { appId: resolvedAppId });
@@ -667,8 +673,24 @@ export class EnhancedApplicationManager {
         }
 
         try {
-            // Resume the container
-            await this._resumeContainer(containerId);
+            // Check actual container state if we haven't already
+            if (!actualContainerState) {
+                const container = this.docker.getContainer(containerId);
+                const info = await container.inspect();
+                actualContainerState = info.State.Paused ? 'paused' : 'running';
+            }
+
+            // Only resume if container is actually paused
+            if (actualContainerState === 'paused') {
+                await this._resumeContainer(containerId);
+                this.logger.info('Container resumed', { appId: resolvedAppId, containerId });
+            } else {
+                this.logger.info('Container already running, no need to resume', {
+                    appId: resolvedAppId,
+                    containerId,
+                    state: actualContainerState
+                });
+            }
 
             // Update database status
             if (this.db) {
@@ -2550,6 +2572,11 @@ PYTHON_EOF`;
             resolvedAppId
         });
 
+        // Check if this is the mock service
+        if (resolvedAppId === 'VEA-mock-service' || resolvedAppId === 'mock-service') {
+            return await this.runtime.mockServiceManager.stop();
+        }
+
         // Get app info to determine app type
         let app = null;
         if (this.db) {
@@ -2747,6 +2774,11 @@ PYTHON_EOF`;
             resolvedAppId
         });
 
+        // Check if this is the mock service
+        if (resolvedAppId === 'VEA-mock-service' || resolvedAppId === 'mock-service') {
+            return await this.runtime.mockServiceManager.pause();
+        }
+
         // Get container ID from database runtime state
         let containerId = null;
         if (this.db) {
@@ -2761,12 +2793,70 @@ PYTHON_EOF`;
             }
         }
 
+        // Fallback: try to find container by name if runtime_state is missing
+        if (!containerId) {
+            try {
+                const containerName = this._sanitizeAppIdForDocker(resolvedAppId);
+                this.logger.info('Runtime state not found, trying to find container by name', {
+                    appId: resolvedAppId,
+                    containerName
+                });
+
+                const container = this.docker.getContainer(containerName);
+                const info = await container.inspect();
+
+                if (info.State.Running || info.State.Paused) {
+                    containerId = containerName;
+                    this.logger.info('Found container by name', {
+                        appId: resolvedAppId,
+                        containerId,
+                        state: info.State.Status,
+                        paused: info.State.Paused
+                    });
+
+                    // Create runtime state record for future use
+                    if (this.db) {
+                        try {
+                            await this.db.updateRuntimeState(resolvedAppId, {
+                                container_id: containerId,
+                                current_state: info.State.Paused ? 'paused' : 'running',
+                                last_heartbeat: new Date().toISOString()
+                            });
+                            this.logger.info('Created runtime state record', { appId: resolvedAppId });
+                        } catch (dbError) {
+                            this.logger.warn('Failed to create runtime state', { error: dbError.message });
+                        }
+                    }
+                }
+            } catch (error) {
+                this.logger.warn('Failed to find container by name', {
+                    appId: resolvedAppId,
+                    error: error.message
+                });
+            }
+        }
+
         if (!containerId) {
             throw new Error(`No container found for application: ${resolvedAppId}`);
         }
 
         try {
-            await this._pauseContainer(containerId);
+            // Check actual container state before pausing
+            const container = this.docker.getContainer(containerId);
+            const info = await container.inspect();
+            const actualState = info.State.Paused ? 'paused' : 'running';
+
+            // Only pause if container is actually running
+            if (actualState === 'running') {
+                await this._pauseContainer(containerId);
+                this.logger.info('Container paused', { appId: resolvedAppId, containerId });
+            } else {
+                this.logger.info('Container already paused, no need to pause again', {
+                    appId: resolvedAppId,
+                    containerId,
+                    state: actualState
+                });
+            }
 
             // Update database status
             if (this.db) {
