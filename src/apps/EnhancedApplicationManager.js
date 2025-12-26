@@ -2576,6 +2576,34 @@ PYTHON_EOF`;
                     containerId = runtimeState?.container_id;
                 }
 
+                // Fallback: try to find container by name if runtime_state is missing
+                if (!containerId) {
+                    try {
+                        const containerName = this._sanitizeAppIdForDocker(resolvedAppId);
+                        this.logger.info('Runtime state not found, trying to find container by name', {
+                            appId: resolvedAppId,
+                            containerName
+                        });
+
+                        const container = this.docker.getContainer(containerName);
+                        const info = await container.inspect();
+
+                        if (info.State.Running || info.State.Paused) {
+                            containerId = containerName;
+                            this.logger.info('Found container by name', {
+                                appId: resolvedAppId,
+                                containerId,
+                                state: info.State.Status
+                            });
+                        }
+                    } catch (error) {
+                        this.logger.warn('Failed to find container by name', {
+                            appId: resolvedAppId,
+                            error: error.message
+                        });
+                    }
+                }
+
                 if (containerId) {
                     this.logger.info('Stopping Docker container', { appId: resolvedAppId, containerId });
 
