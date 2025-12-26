@@ -571,57 +571,144 @@ export class EnhancedApplicationManager {
 
     
     async resumeApplication(appId) {
-        this.logger.info('Resuming application', { appId });
+        this.logger.info('Resuming application', { providedId: appId });
 
-        // Simplified: Direct lookup using appId as executionId
-        const appInfo = this.applications.get(appId);
-        if (!appInfo || !appInfo.container) {
-            throw new Error(`Application not found or not running: ${appId}`);
+        // Resolve the actual appId (handle both executionId and appId)
+        const resolvedAppId = await this.resolveAppId(appId);
+        if (!resolvedAppId) {
+            throw new Error(`Application not found: ${appId}`);
         }
 
-        // Check actual container state instead of relying on in-memory status
-        const container = this.docker.getContainer(appInfo.container.id);
-        const containerInfo = await container.inspect();
+        this.logger.info('Resolved application ID for resume operation', {
+            providedId: appId,
+            resolvedAppId
+        });
 
-        // Resume if container is actually paused, regardless of in-memory status
-        if (!containerInfo.State.Paused) {
-            throw new Error(`Application container is not paused: ${appId} (status: ${containerInfo.State.Status})`);
+        // Get app info from database
+        let app = null;
+        if (this.db) {
+            try {
+                app = await this.db.getApplication(resolvedAppId);
+            } catch (dbError) {
+                this.logger.warn('Failed to get app from database', {
+                    appId: resolvedAppId,
+                    error: dbError.message
+                });
+            }
+        }
+
+        if (!app) {
+            throw new Error(`Application not found in database: ${resolvedAppId}`);
+        }
+
+        // Check if app is paused
+        if (app.status !== 'paused') {
+            throw new Error(`Application not paused: ${resolvedAppId} (current status: ${app.status})`);
+        }
+
+        // Get container ID from database runtime state
+        let containerId = null;
+        if (this.db) {
+            try {
+                const runtimeState = await this.db.getRuntimeState(resolvedAppId);
+                containerId = runtimeState?.container_id;
+            } catch (dbError) {
+                this.logger.warn('Failed to get runtime state from database', {
+                    appId: resolvedAppId,
+                    error: dbError.message
+                });
+            }
+        }
+
+        // Fallback: try to find container by name if runtime_state is missing
+        if (!containerId) {
+            try {
+                const containerName = this._sanitizeAppIdForDocker(resolvedAppId);
+                this.logger.info('Runtime state not found, trying to find container by name', {
+                    appId: resolvedAppId,
+                    containerName
+                });
+
+                const container = this.docker.getContainer(containerName);
+                const info = await container.inspect();
+
+                if (info.State.Running || info.State.Paused) {
+                    containerId = containerName;
+                    this.logger.info('Found container by name', {
+                        appId: resolvedAppId,
+                        containerId,
+                        state: info.State.Status
+                    });
+
+                    // Create runtime state record for future use
+                    if (this.db) {
+                        try {
+                            await this.db.updateRuntimeState(resolvedAppId, {
+                                container_id: containerId,
+                                current_state: info.State.Status,
+                                last_heartbeat: new Date().toISOString()
+                            });
+                            this.logger.info('Created runtime state record', { appId: resolvedAppId });
+                        } catch (dbError) {
+                            this.logger.warn('Failed to create runtime state', { error: dbError.message });
+                        }
+                    }
+                }
+            } catch (error) {
+                this.logger.warn('Failed to find container by name', {
+                    appId: resolvedAppId,
+                    error: error.message
+                });
+            }
+        }
+
+        if (!containerId) {
+            throw new Error(`No container found for application: ${resolvedAppId}`);
         }
 
         try {
             // Resume the container
-            await this._resumeContainer(appInfo.container.id);
-
-            // Update application info
-            appInfo.status = 'running';
+            await this._resumeContainer(containerId);
 
             // Update database status
             if (this.db) {
                 try {
-                    const dbAppId = appInfo.appId || appId;
-                    await this.db.updateRuntimeState(dbAppId, {
+                    await this.db.updateRuntimeState(resolvedAppId, {
                         current_state: 'running',
                         last_heartbeat: new Date().toISOString()
                     });
-                    await this.db.updateApplication(dbAppId, { status: 'running' });
-                    await this.db.addLog(dbAppId, 'status', 'Application resumed', 'info');
+                    await this.db.updateApplication(resolvedAppId, { status: 'running' });
+                    await this.db.addLog(resolvedAppId, 'status', 'Application resumed', 'info');
                 } catch (dbError) {
                     this.logger.warn('Failed to update database on resume', {
-                        appId,
+                        appId: resolvedAppId,
                         error: dbError.message
                     });
                 }
             }
 
-            this.logger.info('Application resumed successfully', { appId });
+            // Update in-memory cache
+            for (const [executionId, appInfo] of this.applications) {
+                if (appInfo.appId === resolvedAppId) {
+                    appInfo.status = 'running';
+                    break;
+                }
+            }
+
+            this.logger.info('Application resumed successfully', { appId: resolvedAppId });
 
             return {
                 status: 'running',
-                appId: appId
+                appId: resolvedAppId,
+                message: 'Application resumed successfully'
             };
 
         } catch (error) {
-            this.logger.error('Failed to resume application', { appId, error: error.message });
+            this.logger.error('Failed to resume application', {
+                appId: resolvedAppId,
+                containerId,
+                error: error.message
+            });
             throw error;
         }
     }
@@ -2619,42 +2706,72 @@ PYTHON_EOF`;
      * @returns {Object} Result of the pause operation
      */
     async pauseApplication(appId) {
-        this.logger.info('Pausing application', { appId });
+        this.logger.info('Pausing application', { providedId: appId });
 
-        // Simplified: Direct lookup using appId as executionId
-        const appInfo = this.applications.get(appId);
-        if (!appInfo || !appInfo.container) {
-            throw new Error(`Application not found or not running: ${appId}`);
+        // Resolve the actual appId (handle both executionId and appId)
+        const resolvedAppId = await this.resolveAppId(appId);
+        if (!resolvedAppId) {
+            throw new Error(`Application not found: ${appId}`);
+        }
+
+        this.logger.info('Resolved application ID for pause operation', {
+            providedId: appId,
+            resolvedAppId
+        });
+
+        // Get container ID from database runtime state
+        let containerId = null;
+        if (this.db) {
+            try {
+                const runtimeState = await this.db.getRuntimeState(resolvedAppId);
+                containerId = runtimeState?.container_id;
+            } catch (dbError) {
+                this.logger.warn('Failed to get runtime state from database', {
+                    appId: resolvedAppId,
+                    error: dbError.message
+                });
+            }
+        }
+
+        if (!containerId) {
+            throw new Error(`No container found for application: ${resolvedAppId}`);
         }
 
         try {
-            await this._pauseContainer(appInfo.container.id);
+            await this._pauseContainer(containerId);
 
             // Update database status
             if (this.db) {
                 try {
-                    const dbAppId = appInfo.appId || appId; // Use appInfo.appId if available, fallback to executionId
-                    await this.db.updateApplication(dbAppId, { status: 'paused' });
-                    await this.db.updateRuntimeState(dbAppId, { current_state: 'paused' });
+                    await this.db.updateApplication(resolvedAppId, { status: 'paused' });
+                    await this.db.updateRuntimeState(resolvedAppId, { current_state: 'paused' });
+                    await this.db.addLog(resolvedAppId, 'status', 'Application paused', 'info');
                 } catch (dbError) {
                     this.logger.warn('Failed to update database on pause', {
-                        appId,
+                        appId: resolvedAppId,
                         error: dbError.message
                     });
                 }
             }
 
-            appInfo.status = 'paused';
+            // Update in-memory cache
+            for (const [executionId, appInfo] of this.applications) {
+                if (appInfo.appId === resolvedAppId) {
+                    appInfo.status = 'paused';
+                    break;
+                }
+            }
 
             return {
-                appId: appId,
+                appId: resolvedAppId,
                 status: 'paused',
                 message: 'Application paused successfully'
             };
 
         } catch (error) {
             this.logger.error('Failed to pause container', {
-                appId,
+                appId: resolvedAppId,
+                containerId,
                 error: error.message
             });
             throw error;
