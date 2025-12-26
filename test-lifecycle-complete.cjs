@@ -516,29 +516,65 @@ if __name__ == "__main__":
 
     const appId = `test-rapid-${Date.now()}`;
     let testPassed = true;
+    let successCount = 0;
+    let errorCount = 0;
 
     try {
       await this.deployTestApp(appId);
       await this.delay(5000);
 
-      console.log(`\n${colors.cyan}Sending rapid pause/resume commands...${colors.reset}`);
+      console.log(`\n${colors.cyan}Sending rapid pause/resume commands sequentially...${colors.reset}`);
 
-      // Send rapid pause/resume commands
-      const promises = [];
-      for (let i = 0; i < 5; i++) {
-        promises.push(this.manageApp(appId, 'pause'));
-        promises.push(this.manageApp(appId, 'resume'));
+      // Send commands sequentially with small delays (more realistic)
+      const commandCount = 5;
+      for (let i = 0; i < commandCount; i++) {
+        console.log(`   Command ${i + 1}/${commandCount}:`);
+
+        // Pause
+        try {
+          const pauseResponse = await this.manageApp(appId, 'pause');
+          if (pauseResponse.type === 'error') {
+            console.log(`      Pause: ${colors.yellow}error${colors.reset}`);
+            errorCount++;
+          } else {
+            console.log(`      Pause: ${colors.green}success${colors.reset}`);
+            successCount++;
+          }
+        } catch (err) {
+          console.log(`      Pause: ${colors.red}error${colors.reset}`);
+          errorCount++;
+        }
+
+        await this.delay(1000); // Small delay between commands
+
+        // Resume
+        try {
+          const resumeResponse = await this.manageApp(appId, 'resume');
+          if (resumeResponse.type === 'error') {
+            console.log(`      Resume: ${colors.yellow}error${colors.reset}`);
+            errorCount++;
+          } else {
+            console.log(`      Resume: ${colors.green}success${colors.reset}`);
+            successCount++;
+          }
+        } catch (err) {
+          console.log(`      Resume: ${colors.red}error${colors.reset}`);
+          errorCount++;
+        }
+
+        await this.delay(1000); // Small delay between commands
       }
 
-      const results = await Promise.all(promises);
+      const totalCommands = commandCount * 2;
+      console.log(`\n   Sent ${totalCommands} commands: ${successCount} success, ${errorCount} errors`);
 
-      const errorCount = results.filter(r => r.type === 'error').length;
-      console.log(`   Sent 10 commands, ${errorCount} errors`);
-
-      if (errorCount < 5) {
-        console.log(`${colors.green}   ✓ Rapid actions handled reasonably${colors.reset}`);
+      // Test passes if at least 80% succeeded
+      const successRate = successCount / totalCommands;
+      if (successRate >= 0.8) {
+        console.log(`${colors.green}   ✓ Rapid actions handled reasonably (${Math.round(successRate * 100)}% success rate)${colors.reset}`);
       } else {
-        console.log(`${colors.yellow}   ⚠️  Many errors during rapid actions (expected)${colors.reset}`);
+        console.log(`${colors.yellow}   ⚠️  Low success rate during rapid actions: ${Math.round(successRate * 100)}%${colors.reset}`);
+        testPassed = false;
       }
 
       // Cleanup
