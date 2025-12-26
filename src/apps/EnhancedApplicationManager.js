@@ -579,9 +579,13 @@ export class EnhancedApplicationManager {
             throw new Error(`Application not found or not running: ${appId}`);
         }
 
-        // Check if app is paused
-        if (appInfo.status !== 'paused') {
-            throw new Error(`Application not paused: ${appId}`);
+        // Check actual container state instead of relying on in-memory status
+        const container = this.docker.getContainer(appInfo.container.id);
+        const containerInfo = await container.inspect();
+
+        // Resume if container is actually paused, regardless of in-memory status
+        if (!containerInfo.State.Paused) {
+            throw new Error(`Application container is not paused: ${appId} (status: ${containerInfo.State.Status})`);
         }
 
         try {
