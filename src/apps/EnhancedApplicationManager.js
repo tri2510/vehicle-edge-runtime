@@ -569,12 +569,30 @@ export class EnhancedApplicationManager {
         }
     }
 
-    
+
     async resumeApplication(appId) {
         this.logger.info('Resuming application', { appId });
 
-        // Simplified: Direct lookup using appId as executionId
-        const appInfo = this.applications.get(appId);
+        // Search for the app in the applications Map by appId
+        // The Map is keyed by executionId, so we need to find the matching entry
+        let appInfo = null;
+        let executionId = null;
+
+        // First, try direct lookup (in case appId is actually an executionId)
+        appInfo = this.applications.get(appId);
+        if (appInfo) {
+            executionId = appId;
+        } else {
+            // Search through all applications to find one matching the appId
+            for (const [execId, info] of this.applications.entries()) {
+                if (info.appId === appId) {
+                    appInfo = info;
+                    executionId = execId;
+                    break;
+                }
+            }
+        }
+
         if (!appInfo || !appInfo.container) {
             throw new Error(`Application not found or not running: ${appId}`);
         }
@@ -858,6 +876,7 @@ export class EnhancedApplicationManager {
     async _loadApplicationsFromDatabase() {
         try {
             const apps = await this.db.listApplications({ status: 'running' });
+            let loadedCount = 0;
 
             for (const app of apps) {
                 const runtimeState = await this.db.getRuntimeState(app.id);
@@ -874,6 +893,32 @@ export class EnhancedApplicationManager {
                                 current_state: 'stopped',
                                 exit_code: containerInfo.State.ExitCode
                             });
+                        } else if (containerInfo.State.Status === 'running') {
+                            // Container is running - add to in-memory cache
+                            // This is critical for pause/resume to work after restart
+                            const executionId = runtimeState.execution_id;
+                            if (executionId && !this.applications.has(executionId)) {
+                                const appInfo = {
+                                    executionId: executionId,
+                                    appId: app.id,
+                                    name: app.name,
+                                    type: app.type,
+                                    container: container,
+                                    status: 'running',
+                                    startTime: app.last_start || app.created_at,
+                                    appDir: app.data_path || `/app/applications/${app.id}`
+                                };
+
+                                // Add to memory cache for pause/resume operations
+                                this.applications.set(executionId, appInfo);
+                                loadedCount++;
+
+                                this.logger.debug('Restored application to memory cache', {
+                                    appId: app.id,
+                                    executionId,
+                                    name: app.name
+                                });
+                            }
                         }
                     } catch (error) {
                         // Container doesn't exist, update status
@@ -883,7 +928,10 @@ export class EnhancedApplicationManager {
                 }
             }
 
-            this.logger.info('Applications loaded from database', { count: apps.length });
+            this.logger.info('Applications loaded from database', {
+                total: apps.length,
+                restored_to_memory: loadedCount
+            });
 
         } catch (error) {
             this.logger.warn('Failed to load applications from database', { error: error.message });
@@ -2617,8 +2665,26 @@ PYTHON_EOF`;
     async pauseApplication(appId) {
         this.logger.info('Pausing application', { appId });
 
-        // Simplified: Direct lookup using appId as executionId
-        const appInfo = this.applications.get(appId);
+        // Search for the app in the applications Map by appId
+        // The Map is keyed by executionId, so we need to find the matching entry
+        let appInfo = null;
+        let executionId = null;
+
+        // First, try direct lookup (in case appId is actually an executionId)
+        appInfo = this.applications.get(appId);
+        if (appInfo) {
+            executionId = appId;
+        } else {
+            // Search through all applications to find one matching the appId
+            for (const [execId, info] of this.applications.entries()) {
+                if (info.appId === appId) {
+                    appInfo = info;
+                    executionId = execId;
+                    break;
+                }
+            }
+        }
+
         if (!appInfo || !appInfo.container) {
             throw new Error(`Application not found or not running: ${appId}`);
         }

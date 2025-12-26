@@ -11,6 +11,8 @@
     "test:unit": "node --test tests/unit/**/*.test.js",
     "test:integration": "node --test tests/integration/**/*.test.js",
     "test:e2e": "node --test tests/e2e/**/*.test.js",
+    "test:backend:lifecycle": "node backend-lifecycle-test-runner.cjs",
+    "test:backend:lifecycle:node": "node --test tests/integration/backend-lifecycle.test.js",
     "test:docker": "node scripts/run-docker-tests.js",
     "test:docker:build": "node --test tests/docker/build/**/*.test.js",
     "test:docker:runtime": "node --test tests/docker/runtime/**/*.test.js",
