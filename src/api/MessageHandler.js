@@ -1095,11 +1095,31 @@ export class MessageHandler {
 
         try {
             let result;
-            
+
+            // Resolve app_id - try with and without VEA- prefix
+            let resolvedAppId = app_id;
+
+            // If app_id doesn't start with VEA-, try to find the app with the prefix
+            if (!app_id.startsWith('VEA-')) {
+                try {
+                    const appList = await this.runtime.appManager.listApplications({ id: `VEA-${app_id}` });
+                    if (appList.length > 0) {
+                        resolvedAppId = `VEA-${app_id}`;
+                        this.logger.info('Resolved app ID with VEA- prefix', { original: app_id, resolved: resolvedAppId });
+                    }
+                } catch (error) {
+                    // Ignore error, use original app_id
+                }
+            }
+
             switch (action) {
                 case 'start':
                     // Delegate to handleRunApp for start functionality
-                    const startResult = await this.handleRunApp({ appId: app_id, id: message.id });
+                    const startResult = await this.handleRunApp({ appId: resolvedAppId, id: message.id });
+                    // If handleRunApp returned an error, pass it through
+                    if (startResult.type === 'error') {
+                        return startResult;
+                    }
                     // Convert run_app response to manage_app response format
                     return {
                         type: 'manage_app-response',
@@ -1113,23 +1133,27 @@ export class MessageHandler {
                     };
 
                 case 'stop':
-                    result = await this.runtime.appManager.stopApplication(app_id);
+                    result = await this.runtime.appManager.stopApplication(resolvedAppId);
                     break;
 
                 case 'pause':
-                    result = await this.runtime.appManager.pauseApplication(app_id);
+                    result = await this.runtime.appManager.pauseApplication(resolvedAppId);
                     break;
 
                 case 'resume':
-                    result = await this.runtime.appManager.resumeApplication(app_id);
+                    result = await this.runtime.appManager.resumeApplication(resolvedAppId);
                     break;
 
                 case 'restart':
                     // Stop the app first
-                    result = await this.runtime.appManager.stopApplication(app_id);
+                    result = await this.runtime.appManager.stopApplication(resolvedAppId);
 
                     // Restart the app using the same logic as run_app
-                    const restartResult = await this.handleRunApp({ appId: app_id, id: message.id });
+                    const restartResult = await this.handleRunApp({ appId: resolvedAppId, id: message.id });
+                    // If handleRunApp returned an error, pass it through
+                    if (restartResult.type === 'error') {
+                        return restartResult;
+                    }
                     return {
                         type: 'manage_app-response',
                         id: message.id,
@@ -1142,19 +1166,22 @@ export class MessageHandler {
                     };
 
                 case 'remove':
-                    result = await this.runtime.appManager.removeApplication(app_id);
+                    result = await this.runtime.appManager.removeApplication(resolvedAppId);
                     break;
 
                 default:
                     throw new Error(`Unknown action: ${action}`);
             }
 
+            // Return response with proper status information
             return {
                 type: 'manage_app-response',
                 id: message.id,
                 app_id,
                 action,
-                status: result.status,
+                status: result.status || 'success',
+                result: result.message || `${action} operation completed`,
+                state: result.status,
                 timestamp: new Date().toISOString()
             };
 
@@ -1698,7 +1725,24 @@ export class MessageHandler {
         this.logger.info('Getting application status', { appId });
 
         try {
-            const status = await this.runtime.appManager.getApplicationStatus(appId);
+            let status;
+
+            // Try to get status with the provided appId first
+            try {
+                status = await this.runtime.appManager.getApplicationStatus(appId);
+            } catch (error) {
+                // If that fails and appId doesn't have VEA- prefix, try with it
+                if (!appId.startsWith('VEA-')) {
+                    const prefixedId = `VEA-${appId}`;
+                    this.logger.info('Retrying with VEA- prefix', { original: appId, prefixed: prefixedId });
+                    status = await this.runtime.appManager.getApplicationStatus(prefixedId);
+                } else {
+                    // If appId has VEA- prefix, try without it
+                    const unprefixedId = appId.replace(/^VEA-/, '');
+                    this.logger.info('Retrying without VEA- prefix', { original: appId, unprefixed: unprefixedId });
+                    status = await this.runtime.appManager.getApplicationStatus(unprefixedId);
+                }
+            }
 
             return {
                 type: 'get_app_status-response',
