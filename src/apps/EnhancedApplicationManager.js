@@ -1077,10 +1077,10 @@ PYTHON_EOF`;
             ],
             HostConfig: {
                 // Mount vehicle library from Docker volume and app-specific dependencies
-                // Use the Docker volume mount path which is accessible from the host
+                // Use absolute paths for Docker volume mount points
                 Binds: [
                     `/var/lib/docker/volumes/vehicle-edge-data/_data/applications/vehicle-library:/app/vehicle-lib:ro`,
-                    `${path.join(this.appStorage, 'dependencies', appId)}:/app/dependencies:ro`
+                    `/var/lib/docker/volumes/vehicle-edge-data/_data/applications/dependencies/${appId}:/app/dependencies:ro`
                 ],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
