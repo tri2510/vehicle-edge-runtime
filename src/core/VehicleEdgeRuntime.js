@@ -441,15 +441,17 @@ export class VehicleEdgeRuntime extends EventEmitter {
             const socketOptions = {
                 reconnection: true,
                 reconnectionDelay: 5000,
+                reconnectionDelayMax: 10000,
                 reconnectionAttempts: Infinity,
-                timeout: 20000 // Connection timeout
+                timeout: 20000, // Connection timeout
+                autoConnect: true
             };
 
-            // Use websocket transport for non-HTTPS, allow any for HTTPS
+            // For HTTPS/WSS, try polling first as fallback
             if (httpUrl.startsWith('https://')) {
-                socketOptions.transports = ['websocket', 'polling'];
+                socketOptions.transports = ['polling', 'websocket'];
             } else {
-                socketOptions.transports = ['websocket'];
+                socketOptions.transports = ['websocket', 'polling'];
             }
 
             this.kitManagerConnection = io(httpUrl, socketOptions);

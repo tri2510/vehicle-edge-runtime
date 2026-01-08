@@ -5,6 +5,11 @@ node_modules/
 data/
 logs/
 
+# Environment files
+.env
+.env.local
+.env.*.local
+
 # Test outputs and reports
 test-report.txt
 *.log
@@ -15,23 +20,6 @@ test-reports/
 # Runtime temporary files
 workspace/
 kuksa-server.pid
-
-# Application deployment artifacts (keep structure, ignore content)
-data/applications/dependencies/deploy_*/
-data/logs/app-*.log
-
-# Database files (for clean builds)
-data/*.db
-data/*.db-*
-
-# Test data temporary files
-test-data/temp/
-test-data/*.tmp
-
-# Environment files
-.env
-.env.local
-.env.*.local
 
 # IDE files
 .vscode/
@@ -48,20 +36,3 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
-
-# Docker
-.dockerignore
-
-# Simulation binary files and large archives
-simulation/pi-dist/
-simulation/archive/pi-dist/
-*.qcow2
-*.img
-*.iso
-*.bin
-*.dmg
-
-# Archived large files (keep structure but ignore binaries)
-simulation/archive/**/*.qcow2
-simulation/archive/**/*.img
-simulation/archive/**/*.iso
