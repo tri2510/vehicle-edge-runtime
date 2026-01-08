@@ -31,41 +31,35 @@ case "$ACTION" in
     deploy)
         echo -e "${YELLOW}📦 Deploying Vehicle Edge Runtime...${NC}"
 
-        # Use new streamlined files
-        if [ ! -f "Dockerfile.new" ]; then
-            echo -e "${RED}❌ Dockerfile.new not found${NC}"
-            exit 1
-        fi
-
         # Create .env from production defaults if it doesn't exist
         if [ ! -f ".env" ]; then
             echo -e "${YELLOW}📝 Creating .env from production defaults...${NC}"
             cp .env.production .env
         fi
 
-        # Build with new Dockerfile
+        # Build with Dockerfile
         echo -e "${BLUE}🔨 Building Docker image...${NC}"
-        docker build -f Dockerfile.new -t vehicle-edge-runtime:latest .
+        docker build -t vehicle-edge-runtime:latest .
 
         # Deploy with optional profiles
         echo -e "${BLUE}🚢 Starting services...${NC}"
         if [ "$PROFILE" = "full" ]; then
-            docker-compose -f docker-compose.new.yml --profile local-kuksa --profile redis up -d
+            docker-compose --profile local-kuksa --profile redis up -d
             echo -e "${GREEN}✅ Deployed with local Kuksa and Redis${NC}"
         elif [ "$PROFILE" = "kuksa" ]; then
-            docker-compose -f docker-compose.new.yml --profile local-kuksa up -d
+            docker-compose --profile local-kuksa up -d
             echo -e "${GREEN}✅ Deployed with local Kuksa${NC}"
         elif [ "$PROFILE" = "redis" ]; then
-            docker-compose -f docker-compose.new.yml --profile redis up -d
+            docker-compose --profile redis up -d
             echo -e "${GREEN}✅ Deployed with Redis${NC}"
         else
-            docker-compose -f docker-compose.new.yml up -d
+            docker-compose up -d
             echo -e "${GREEN}✅ Deployed base runtime (connects to online Kit-Manager)${NC}"
         fi
 
         echo ""
         echo -e "${BLUE}📊 Service Status:${NC}"
-        docker-compose -f docker-compose.new.yml ps
+        docker-compose ps
 
         echo ""
         echo -e "${BLUE}🌐 Access Points:${NC}"
@@ -79,18 +73,18 @@ case "$ACTION" in
 
     stop)
         echo -e "${YELLOW}🛑 Stopping Vehicle Edge Runtime...${NC}"
-        docker-compose -f docker-compose.new.yml down
+        docker-compose down
         echo -e "${GREEN}✅ Services stopped${NC}"
         ;;
 
     logs)
         echo -e "${BLUE}📋 Vehicle Edge Runtime Logs:${NC}"
-        docker-compose -f docker-compose.new.yml logs -f vehicle-edge-runtime
+        docker-compose logs -f vehicle-edge-runtime
         ;;
 
     status)
         echo -e "${BLUE}📊 Service Status:${NC}"
-        docker-compose -f docker-compose.new.yml ps
+        docker-compose ps
 
         echo ""
         echo -e "${BLUE}🏥 Health Check:${NC}"
@@ -103,7 +97,7 @@ case "$ACTION" in
 
     clean)
         echo -e "${YELLOW}🧹 Cleaning up...${NC}"
-        docker-compose -f docker-compose.new.yml down -v
+        docker-compose down -v
         docker rmi vehicle-edge-runtime:latest 2>/dev/null || true
         echo -e "${GREEN}✅ Cleanup complete${NC}"
         ;;

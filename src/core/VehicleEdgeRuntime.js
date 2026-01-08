@@ -420,7 +420,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Convert URL to Socket.IO compatible format
             let httpUrl;
-            if (this.options.kitManagerUrl.startsWith('ws://')) {
+            if (this.options.kitManagerUrl.startsWith('wss://')) {
+                // Convert WebSocket Secure URL to HTTPS for Socket.IO
+                httpUrl = this.options.kitManagerUrl.replace('wss://', 'https://');
+            } else if (this.options.kitManagerUrl.startsWith('ws://')) {
                 // Convert WebSocket URL to HTTP for Socket.IO
                 httpUrl = this.options.kitManagerUrl.replace('ws://', 'http://');
             } else if (this.options.kitManagerUrl.startsWith('https://')) {
@@ -430,7 +433,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
                 // Keep HTTP URLs as-is for Socket.IO
                 httpUrl = this.options.kitManagerUrl;
             } else {
-                // Default to WebSocket format
+                // Default to HTTP format
                 httpUrl = this.options.kitManagerUrl.replace(/^/, 'http://');
             }
 
