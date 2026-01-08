@@ -85,6 +85,10 @@ export class VehicleEdgeRuntime extends EventEmitter {
         this.clients = new Map();
         this.registeredKits = new Map();
 
+        // Kit Manager state reporting
+        this.stateReportInterval = null;
+        this.STATE_REPORT_INTERVAL_MS = 30000; // Report every 30 seconds
+
         this.logger.info('Vehicle Edge Runtime initialized', {
             runtimeId: this.runtimeId,
             port: this.options.port,
@@ -175,6 +179,9 @@ export class VehicleEdgeRuntime extends EventEmitter {
             if (this.wsServer) {
                 this.wsServer.close();
             }
+
+            // Stop state reporting to Kit Manager
+            this._stopStateReporting();
 
             // Disconnect from Kit Manager
             if (this.kitManagerConnection) {
@@ -449,7 +456,18 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
                 // Register runtime with Kit Manager
                 this._registerWithKitManager();
+
+                // Start periodic state reporting
+                this._startStateReporting();
+
                 resolve();
+            });
+
+            this.kitManagerConnection.on('reconnect', (attemptNumber) => {
+                this.logger.info('Reconnected to Kit Manager', { attemptNumber });
+
+                // Re-register after reconnection
+                this._registerWithKitManager();
             });
 
             this.kitManagerConnection.on('connect_error', (error) => {
@@ -457,8 +475,11 @@ export class VehicleEdgeRuntime extends EventEmitter {
                 reject(error);
             });
 
-            this.kitManagerConnection.on('disconnect', () => {
-                this.logger.warn('Kit Manager connection closed');
+            this.kitManagerConnection.on('disconnect', (reason) => {
+                this.logger.warn('Kit Manager connection closed', { reason });
+
+                // Stop state reporting when disconnected
+                this._stopStateReporting();
             });
 
             // Handle incoming messages from Kit Manager
@@ -529,6 +550,77 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
         this.kitManagerConnection.emit('register_kit', registrationMessage);
         this.logger.info('Runtime registration sent to Kit Manager');
+    }
+
+    /**
+     * Start periodic state reporting to Kit Manager
+     * Updates runner and subscriber counts
+     */
+    _startStateReporting() {
+        // Clear any existing interval
+        this._stopStateReporting();
+
+        // Send initial state
+        this._reportRuntimeState();
+
+        // Set up periodic reporting
+        this.stateReportInterval = setInterval(() => {
+            this._reportRuntimeState();
+        }, this.STATE_REPORT_INTERVAL_MS);
+
+        this.logger.info('Started periodic state reporting to Kit Manager', {
+            intervalMs: this.STATE_REPORT_INTERVAL_MS
+        });
+    }
+
+    /**
+     * Stop periodic state reporting
+     */
+    _stopStateReporting() {
+        if (this.stateReportInterval) {
+            clearInterval(this.stateReportInterval);
+            this.stateReportInterval = null;
+            this.logger.debug('Stopped periodic state reporting to Kit Manager');
+        }
+    }
+
+    /**
+     * Report current runtime state to Kit Manager
+     * Includes number of running apps and active signal subscriptions
+     */
+    _reportRuntimeState() {
+        if (!this._isKitManagerConnected()) {
+            return;
+        }
+
+        try {
+            const runningApps = this.appManager.getRunningApplications();
+            const noOfRunner = runningApps.length;
+
+            // Get subscriber count from Kuksa Manager if available
+            let noSubscriber = 0;
+            if (this.kuksaManager && this.kuksaManager.getSubscriptionCount) {
+                noSubscriber = this.kuksaManager.getSubscriptionCount();
+            }
+
+            const stateMessage = {
+                kit_id: this.runtimeId,
+                data: {
+                    noOfRunner,
+                    noSubscriber
+                }
+            };
+
+            this.kitManagerConnection.emit('report-runtime-state', stateMessage);
+            this.logger.debug('Runtime state reported to Kit Manager', {
+                noOfRunner,
+                noSubscriber
+            });
+        } catch (error) {
+            this.logger.error('Failed to report runtime state to Kit Manager', {
+                error: error.message
+            });
+        }
     }
 
     _isKitManagerConnected() {
