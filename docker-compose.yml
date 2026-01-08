@@ -12,17 +12,21 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: vehicle-edge-runtime
+    # Add container user to host's docker group (GID 999)
+    group_add:
+      - "999"
     ports:
       - "3002:3002"  # WebSocket API
       - "3003:3003"  # Health Check
     volumes:
-      - ./data:/app/data
+      - vehicle-edge-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       # Runtime Configuration
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=${PORT:-3002}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RUNTIME_NAME=${RUNTIME_NAME:-}  # Optional runtime name suffix
 
       # Smart Default Connections
       - KIT_MANAGER_URL=${KIT_MANAGER_URL:-wss://kit.digitalauto.tech}
@@ -150,6 +154,7 @@ services:
       start_period: 10s
 
 volumes:
+  vehicle-edge-data:
   redis-data:
 
 networks:

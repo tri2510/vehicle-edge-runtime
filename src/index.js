@@ -19,6 +19,7 @@ let LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 let SKIP_KIT_MANAGER = process.env.SKIP_KIT_MANAGER === 'true';
 let SKIP_KUKSA = process.env.SKIP_KUKSA === 'true';
 let RUNTIME_ID = process.env.RUNTIME_ID || null;
+let RUNTIME_NAME = process.env.RUNTIME_NAME || '';
 
 for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -40,6 +41,9 @@ for (let i = 0; i < args.length; i++) {
         case '--runtime-id':
             RUNTIME_ID = args[++i];
             break;
+        case '--runtime-name':
+            RUNTIME_NAME = args[++i];
+            break;
     }
 }
 
@@ -50,6 +54,7 @@ async function main() {
         console.log(`Kit Manager URL: ${KIT_MANAGER_URL}`);
         console.log(`Log Level: ${LOG_LEVEL}`);
         if (RUNTIME_ID) console.log(`Runtime ID: ${RUNTIME_ID}`);
+        if (RUNTIME_NAME) console.log(`Runtime Name: ${RUNTIME_NAME}`);
         if (SKIP_KIT_MANAGER) console.log('Kit Manager: DISABLED');
         if (SKIP_KUKSA) console.log('Kuksa: DISABLED');
 
@@ -59,7 +64,8 @@ async function main() {
             logLevel: LOG_LEVEL,
             skipKitManager: SKIP_KIT_MANAGER,
             skipKuksa: SKIP_KUKSA,
-            dataPath: process.env.DATA_DIR || './data'
+            dataPath: process.env.DATA_DIR || './data',
+            runtimeName: RUNTIME_NAME
         });
 
         await runtime.start();

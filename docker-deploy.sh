@@ -26,6 +26,7 @@ fi
 # Parse command line arguments
 ACTION=${1:-"deploy"}
 PROFILE=${2:-"base"}
+RUNTIME_NAME=${3:-""}
 
 case "$ACTION" in
     deploy)
@@ -43,17 +44,23 @@ case "$ACTION" in
 
         # Deploy with optional profiles
         echo -e "${BLUE}🚢 Starting services...${NC}"
+
+        # Set runtime name if provided
+        if [ -n "$RUNTIME_NAME" ]; then
+            echo -e "${BLUE}Runtime Name: ${RUNTIME_NAME}${NC}"
+        fi
+
         if [ "$PROFILE" = "full" ]; then
-            SKIP_KUKSA=false docker compose --profile local-kuksa --profile redis up -d
+            SKIP_KUKSA=false RUNTIME_NAME="$RUNTIME_NAME" docker compose --profile local-kuksa --profile redis up -d
             echo -e "${GREEN}✅ Deployed with local Kuksa and Redis${NC}"
         elif [ "$PROFILE" = "kuksa" ]; then
-            SKIP_KUKSA=false docker compose --profile local-kuksa up -d
+            SKIP_KUKSA=false RUNTIME_NAME="$RUNTIME_NAME" docker compose --profile local-kuksa up -d
             echo -e "${GREEN}✅ Deployed with local Kuksa${NC}"
         elif [ "$PROFILE" = "redis" ]; then
-            docker compose --profile redis up -d
+            RUNTIME_NAME="$RUNTIME_NAME" docker compose --profile redis up -d
             echo -e "${GREEN}✅ Deployed with Redis${NC}"
         else
-            docker compose up -d
+            RUNTIME_NAME="$RUNTIME_NAME" docker compose up -d
             echo -e "${GREEN}✅ Deployed base runtime (connects to online Kit-Manager)${NC}"
         fi
 
@@ -103,7 +110,7 @@ case "$ACTION" in
         ;;
 
     *)
-        echo -e "${YELLOW}Usage: $0 [deploy|stop|logs|status|clean] [profile]${NC}"
+        echo -e "${YELLOW}Usage: $0 [deploy|stop|logs|status|clean] [profile] [runtime-name]${NC}"
         echo ""
         echo "Profiles:"
         echo "  base     - Runtime only (connects to online Kit-Manager)"
@@ -111,10 +118,15 @@ case "$ACTION" in
         echo "  redis    - Runtime + Redis caching"
         echo "  full     - Runtime + Kuksa + Redis"
         echo ""
+        echo "Runtime Name:"
+        echo "  Optional suffix for Kit-Manager registration"
+        echo "  Format: Edge-Runtime-<hash>-<runtime-name>"
+        echo ""
         echo "Examples:"
-        echo "  $0 deploy base      # Runtime only"
-        echo "  $0 deploy kuksa     # With local Kuksa"
-        echo "  $0 deploy full      # Complete stack"
+        echo "  $0 deploy base              # Runtime only"
+        echo "  $0 deploy base production   # Named 'production'"
+        echo "  $0 deploy kuksa vehicle-1    # With local Kuksa, named 'vehicle-1'"
+        echo "  $0 deploy full              # Complete stack"
         exit 1
         ;;
 esac

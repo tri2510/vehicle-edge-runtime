@@ -18,8 +18,9 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user with Docker group access
+# Try to use GID 999 for docker group to match host, fallback if in use
 RUN addgroup -g 1001 -S nodejs && \
-    addgroup -g 1337 docker && \
+    (addgroup -g 999 -S docker 2>/dev/null || addgroup -S docker) && \
     adduser -S vehicle-edge -u 1001 -G nodejs && \
     adduser vehicle-edge docker
 

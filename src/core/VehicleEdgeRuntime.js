@@ -33,6 +33,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             dataPath: options.dataPath || './data',
             skipKitManager: options.skipKitManager || false,
             skipKuksa: options.skipKuksa || false,
+            runtimeName: options.runtimeName || '',
             ...options
         };
 
@@ -538,9 +539,14 @@ export class VehicleEdgeRuntime extends EventEmitter {
     }
 
     _registerWithKitManager() {
+        // Generate kit name: Edge-Runtime-<short_hash>-<name_optional>
+        const shortHash = this._generateShortHash();
+        const nameSuffix = this.options.runtimeName ? `-${this.options.runtimeName}` : '';
+        const kitName = `Edge-Runtime-${shortHash}${nameSuffix}`;
+
         const registrationMessage = {
             kit_id: this.runtimeId,
-            name: 'Vehicle Edge Runtime',
+            name: kitName,
             desc: 'Vehicle Edge Runtime for Eclipse Autowrx - Vehicle application execution with Kuksa integration',
             support_apis: [
                 'python_app_execution',
@@ -554,7 +560,26 @@ export class VehicleEdgeRuntime extends EventEmitter {
         };
 
         this.kitManagerConnection.emit('register_kit', registrationMessage);
-        this.logger.info('Runtime registration sent to Kit Manager');
+        this.logger.info('Runtime registration sent to Kit Manager', { kitName });
+    }
+
+    /**
+     * Generate a short hash from runtimeId for kit naming
+     * @returns {string} 6-character hex hash
+     */
+    _generateShortHash() {
+        // Simple hash function to generate 6-character hex string from runtimeId
+        let hash = 0;
+        const idStr = this.runtimeId.replace(/-/g, '');
+
+        for (let i = 0; i < idStr.length; i++) {
+            const char = idStr.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+
+        // Convert to hex and take first 6 characters
+        return Math.abs(hash).toString(16).padStart(6, '0').substring(0, 6);
     }
 
     /**
