@@ -1604,6 +1604,33 @@ export class MessageHandler {
         this.logger.info('Uninstalling application', { appId });
 
         try {
+            // Redirect mock service uninstall to MockServiceManager
+            if (appId === 'VEA-mock-service' && this.runtime.mockServiceManager) {
+                this.logger.info('Redirecting mock service uninstall to MockServiceManager');
+
+                // First stop the mock service
+                await this.runtime.mockServiceManager.stop();
+
+                // Delete from database using the database manager
+                if (this.runtime.appManager && this.runtime.appManager.db) {
+                    try {
+                        await this.runtime.appManager.db.deleteApplication(appId);
+                        this.logger.info('Mock service deleted from database', { appId });
+                    } catch (dbError) {
+                        this.logger.warn('Failed to delete mock service from database', { error: dbError.message });
+                    }
+                }
+
+                return {
+                    type: 'app_uninstalled',
+                    id: message.id,
+                    appId,
+                    status: 'uninstalled',
+                    message: 'Mock service uninstalled successfully',
+                    timestamp: new Date().toISOString()
+                };
+            }
+
             const result = await this.runtime.appManager.uninstallApplication(appId);
 
             return {
@@ -1689,6 +1716,24 @@ export class MessageHandler {
         this.logger.info('Stopping application', { appId });
 
         try {
+            // Redirect mock service stop to MockServiceManager
+            if (appId === 'VEA-mock-service' && this.runtime.mockServiceManager) {
+                this.logger.info('Redirecting mock service stop to MockServiceManager');
+                const result = await this.runtime.mockServiceManager.stop();
+
+                return {
+                    type: 'stop_app-response',
+                    id: message.id,
+                    result: {
+                        appId,
+                        status: result.success ? 'stopped' : 'error',
+                        message: result.message,
+                        timestamp: new Date().toISOString()
+                    },
+                    timestamp: new Date().toISOString()
+                };
+            }
+
             const result = await this.runtime.appManager.stopApplication(appId);
 
             return {
