@@ -12,9 +12,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: vehicle-edge-runtime
-    # Add container user to host's docker group (GID 999)
+    # Add container user to host's docker group (configurable GID)
     group_add:
-      - "999"
+      - "${DOCKER_GID:-994}"  # Auto-detect or use default 994
     ports:
       - "3002:3002"  # WebSocket API
       - "3003:3003"  # Health Check

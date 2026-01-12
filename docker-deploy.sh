@@ -38,6 +38,18 @@ case "$ACTION" in
             cp .env.production .env
         fi
 
+        # Detect Docker group GID and update .env
+        DOCKER_GID=$(getent group docker | cut -d: -f3)
+        if [ -n "$DOCKER_GID" ]; then
+            echo "DOCKER_GID=$DOCKER_GID" >> .env
+            echo -e "${GREEN}✅ Detected Docker group GID: $DOCKER_GID${NC}"
+        fi
+
+        # Pre-pull required images to avoid runtime errors
+        echo -e "${BLUE}📥 Pre-pulling required images...${NC}"
+        docker pull python:3.11-slim || echo -e "${YELLOW}⚠️  Warning: Failed to pull python:3.11-slim${NC}"
+        docker pull eclipse/kuksa-databroker:0.4.4 || echo -e "${YELLOW}⚠️  Warning: Failed to pull kuksa-databroker${NC}"
+
         # Build with Dockerfile
         echo -e "${BLUE}🔨 Building Docker image...${NC}"
         docker build -t vehicle-edge-runtime:latest .
