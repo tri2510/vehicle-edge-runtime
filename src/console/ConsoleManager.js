@@ -104,6 +104,19 @@ export class ConsoleManager {
         return lines.map(entry => `[${entry.timestamp}] [${entry.stream.toUpperCase()}] ${entry.output}`).join('\n');
     }
 
+    getBufferedOutputAsArray(execId, maxLines = null) {
+        const buffer = this.outputBuffers.get(execId);
+        if (!buffer) {
+            return [];
+        }
+
+        if (maxLines === null) {
+            maxLines = this.maxBufferLines;
+        }
+
+        return buffer.slice(-maxLines);
+    }
+
     async getAppOutput(executionId, lines = 100) {
         try {
             // Get from buffer first
@@ -125,6 +138,51 @@ export class ConsoleManager {
             this.logger.error('Failed to get app output', { executionId, error: error.message });
             throw error;
         }
+    }
+
+    async getAppOutputAsArray(executionId, lines = 100) {
+        try {
+            // Get from buffer first
+            const buffer = this.outputBuffers.get(executionId);
+            if (buffer && buffer.length > 0) {
+                return buffer.slice(-lines);
+            }
+
+            // If not in buffer, try to read from log file and parse
+            const logFile = this.logFiles.get(executionId);
+            if (logFile && await fs.pathExists(logFile)) {
+                const content = await this._readLastLinesFromFile(logFile, lines);
+                return this._parseLogFileContent(content);
+            }
+
+            return [];
+
+        } catch (error) {
+            this.logger.error('Failed to get app output as array', { executionId, error: error.message });
+            throw error;
+        }
+    }
+
+    _parseLogFileContent(content) {
+        // Parse log file content back into structured format
+        // Format: [timestamp] [STREAM] output
+        const lines = content.split('\n').filter(line => line.trim());
+        const result = [];
+
+        for (const line of lines) {
+            // Match pattern: [timestamp] [STREAM] output
+            const match = line.match(/^\[([^\]]+)\]\s+\[([A-Z]+)\]\s+(.+)$/);
+            if (match) {
+                const [, timestamp, stream, output] = match;
+                result.push({
+                    timestamp,
+                    stream: stream.toLowerCase(),
+                    output
+                });
+            }
+        }
+
+        return result;
     }
 
     async getAppLogs(executionId, lines = 100) {
@@ -207,6 +265,18 @@ export class ConsoleManager {
     _sendToClient(clientId, message) {
         if (!this.runtime) return;
 
+        // Handle Kit Manager clients - send through Kit Manager connection
+        if (clientId === 'kit_manager' || clientId.startsWith('kit_manager:')) {
+            if (this.runtime.kitManagerConnection && this.runtime.kitManagerConnection.connected) {
+                this.runtime.kitManagerConnection.emit('messageToKit-kitReply', message);
+                this.logger.debug('Console output sent to Kit Manager', { executionId: message.executionId });
+            } else {
+                this.logger.warn('Kit Manager connection not available for console output');
+            }
+            return;
+        }
+
+        // Handle WebSocket clients
         const clientInfo = this.runtime.clients.get(clientId);
         if (clientInfo && clientInfo.client.readyState === clientInfo.client.OPEN) {
             clientInfo.client.send(JSON.stringify(message));

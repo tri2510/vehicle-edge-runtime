@@ -509,14 +509,13 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
                 // Forward message to MessageHandler and capture response
                 try {
-                    const response = await this.messageHandler.processMessage('kit_manager', {
-                        type: data.type || 'deploy_n_run',
-                        cmd: data.cmd,
-                        code: data.code,
-                        prototype: data.prototype,
-                        convertedCode: data.convertedCode,
-                        id: data.id  // Pass id from request
-                    });
+                    // Pass all fields from data to message handler for compatibility
+                    const messagePayload = {
+                        ...data,  // Include all fields from the incoming message
+                        type: data.type || 'deploy_n_run'
+                    };
+
+                    const response = await this.messageHandler.processMessage('kit_manager', messagePayload);
 
                     this.logger.info('Message processed successfully', {
                         responseType: response?.type,

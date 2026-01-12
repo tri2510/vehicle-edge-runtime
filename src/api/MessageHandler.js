@@ -343,13 +343,13 @@ export class MessageHandler {
         this.logger.debug('Getting application output', { appId, lines });
 
         try {
-            const output = await this.runtime.consoleManager.getAppOutput(appId, lines);
+            const output = await this.runtime.consoleManager.getAppOutputAsArray(appId, lines);
 
             return {
-                type: 'app_output_response',
+                type: 'app_output',
                 id: message.id,
                 appId,
-                output,
+                output,  // Array of {stream, output, timestamp}
                 timestamp: new Date().toISOString()
             };
 

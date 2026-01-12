@@ -116,6 +116,18 @@ export class WebSocketHandler {
     }
 
     _sendToClient(clientId, message) {
+        // Handle Kit Manager clients - send through Kit Manager connection
+        if (clientId === 'kit_manager' || clientId.startsWith('kit_manager:')) {
+            if (this.runtime.kitManagerConnection && this.runtime.kitManagerConnection.connected) {
+                this.runtime.kitManagerConnection.emit('messageToKit-kitReply', message);
+                this.logger.debug('Message sent to Kit Manager', { clientId, type: message.type });
+            } else {
+                this.logger.warn('Kit Manager connection not available', { clientId });
+            }
+            return;
+        }
+
+        // Handle WebSocket clients
         const clientInfo = this.runtime.clients.get(clientId);
         this.logger.debug('Attempting to send message to client', {
             clientId,
