@@ -191,7 +191,7 @@ export class MockServiceManager {
         try {
             // Ensure database entry exists
             await this.ensureDatabaseEntry();
-            await this.addDatabaseLog('status', `Starting mock service in ${mode} mode`);
+            await this.addDatabaseLog('info', `Starting mock service in ${mode} mode`);
             await this.updateDatabaseStatus('starting');
 
             // Check if image exists
@@ -213,7 +213,7 @@ export class MockServiceManager {
                 const info = await existingContainer.inspect();
                 if (info.State.Running) {
                     this.logger.warn('Mock service already running', { status: info.State.Status });
-                    await this.addDatabaseLog('warning', 'Mock service already running');
+                    await this.addDatabaseLog('warn', 'Mock service already running');
                     return {
                         success: false,
                         message: 'Mock service is already running',
@@ -223,7 +223,7 @@ export class MockServiceManager {
                 // Remove stopped container
                 await existingContainer.remove();
                 this.logger.info('Removed existing stopped container');
-                await this.addDatabaseLog('status', 'Removed existing stopped container');
+                await this.addDatabaseLog('info', 'Removed existing stopped container');
             } catch (inspectError) {
                 // Container doesn't exist, continue
                 this.logger.debug('No existing container found');
@@ -265,7 +265,7 @@ export class MockServiceManager {
 
             // Update database
             await this.updateDatabaseStatus('running', this.containerName);
-            await this.addDatabaseLog('status', `Mock service started in ${mode} mode`);
+            await this.addDatabaseLog('info', `Mock service started in ${mode} mode`);
 
             return {
                 success: true,
@@ -288,7 +288,7 @@ export class MockServiceManager {
         this.logger.info('Stopping mock service');
 
         try {
-            await this.addDatabaseLog('status', 'Stopping mock service');
+            await this.addDatabaseLog('info', 'Stopping mock service');
             await this.updateDatabaseStatus('stopping');
 
             const container = this.docker.getContainer(this.containerName);
@@ -299,7 +299,7 @@ export class MockServiceManager {
 
             // Update database
             await this.updateDatabaseStatus('stopped');
-            await this.addDatabaseLog('status', 'Mock service stopped successfully');
+            await this.addDatabaseLog('info', 'Mock service stopped successfully');
 
             return {
                 success: true,

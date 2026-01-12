@@ -48,7 +48,16 @@ case "$ACTION" in
         # Pre-pull required images to avoid runtime errors
         echo -e "${BLUE}📥 Pre-pulling required images...${NC}"
         docker pull python:3.11-slim || echo -e "${YELLOW}⚠️  Warning: Failed to pull python:3.11-slim${NC}"
+        docker pull python:3.10-slim || echo -e "${YELLOW}⚠️  Warning: Failed to pull python:3.10-slim${NC}"
         docker pull eclipse/kuksa-databroker:0.4.4 || echo -e "${YELLOW}⚠️  Warning: Failed to pull kuksa-databroker${NC}"
+
+        # Build mock service image if not exists
+        echo -e "${BLUE}🔨 Building mock service image...${NC}"
+        if ! docker image inspect vehicle-simple-mock-service:latest > /dev/null 2>&1; then
+            docker build -t vehicle-simple-mock-service:latest -f ./services/mock-service/Dockerfile.simple ./services/mock-service || echo -e "${YELLOW}⚠️  Warning: Failed to build mock service image${NC}"
+        else
+            echo -e "${GREEN}✅ Mock service image already exists${NC}"
+        fi
 
         # Build with Dockerfile
         echo -e "${BLUE}🔨 Building Docker image...${NC}"
