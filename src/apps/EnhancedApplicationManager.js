@@ -25,6 +25,50 @@ export class EnhancedApplicationManager {
         this.dbPath = path.join(options.dataPath || './data', 'vehicle-edge.db');
         this.db = new DatabaseManager(this.dbPath, { logLevel: options.logLevel });
         this.resourceMonitor = null;
+        this._dockerVolumeName = null; // Cache for detected Docker volume name
+    }
+
+    /**
+     * Get the actual Docker volume name dynamically.
+     * Uses COMPOSE_PROJECT_NAME env var or auto-detects from container mounts.
+     */
+    async _getDockerVolumeName() {
+        if (this._dockerVolumeName) {
+            return this._dockerVolumeName;
+        }
+
+        // Method 1: Use COMPOSE_PROJECT_NAME environment variable
+        const composeProjectName = process.env.COMPOSE_PROJECT_NAME || process.env.COMPOSE_PROJECT_NAME?.toLowerCase();
+        if (composeProjectName) {
+            this._dockerVolumeName = `${composeProjectName}_vehicle-edge-data`;
+            this.logger.info('Using COMPOSE_PROJECT_NAME for volume', { volumeName: this._dockerVolumeName });
+            return this._dockerVolumeName;
+        }
+
+        // Method 2: Auto-detect by inspecting the runtime container's mounts
+        try {
+            // Get the hostname/container name of the current runtime container
+            const hostname = process.env.HOSTNAME;
+            if (hostname) {
+                const container = this.docker.getContainer(hostname);
+                const info = await container.inspect();
+
+                // Find the mount that points to /app/data
+                const appDataMount = info.Mounts?.find(m => m.Destination === '/app/data');
+                if (appDataMount && appDataMount.Name) {
+                    this._dockerVolumeName = appDataMount.Name;
+                    this.logger.info('Auto-detected Docker volume name from container mounts', { volumeName: this._dockerVolumeName });
+                    return this._dockerVolumeName;
+                }
+            }
+        } catch (error) {
+            this.logger.warn('Failed to auto-detect volume name from container mounts', { error: error.message });
+        }
+
+        // Method 3: Fall back to default (no prefix)
+        this._dockerVolumeName = 'vehicle-edge-data';
+        this.logger.info('Using default Docker volume name', { volumeName: this._dockerVolumeName });
+        return this._dockerVolumeName;
     }
 
     async initialize() {
@@ -1061,6 +1105,9 @@ PYTHON_EOF`;
             this.logger.info('Installing vehicle library dependencies in container', { appId });
         }
 
+        // Get the actual Docker volume name dynamically
+        const dockerVolumeName = await this._getDockerVolumeName();
+
         // Create container with inline Python code execution
         const containerConfig = {
             Image: 'python:3.11-slim',
@@ -1077,10 +1124,10 @@ PYTHON_EOF`;
             ],
             HostConfig: {
                 // Mount vehicle library from Docker volume and app-specific dependencies
-                // Use absolute paths for Docker volume mount points
+                // Use dynamically detected volume name
                 Binds: [
-                    `/var/lib/docker/volumes/vehicle-edge-data/_data/applications/vehicle-library:/app/vehicle-lib:ro`,
-                    `/var/lib/docker/volumes/vehicle-edge-data/_data/applications/dependencies/${appId}:/app/dependencies:ro`
+                    `/var/lib/docker/volumes/${dockerVolumeName}/_data/applications/vehicle-library:/app/vehicle-lib:ro`,
+                    `/var/lib/docker/volumes/${dockerVolumeName}/_data/applications/dependencies/${appId}:/app/dependencies:ro`
                 ],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
@@ -1292,6 +1339,9 @@ PYTHON_EOF`;
         // Sanitize appId for Docker names
         const sanitizedName = this._sanitizeAppIdForDocker(appId);
 
+        // Get the actual Docker volume name dynamically
+        const dockerVolumeName = await this._getDockerVolumeName();
+
         const containerConfig = {
             Image: isDockerImage ? binaryPath : 'ubuntu:22.04',
             WorkingDir: isDockerImage ? '/app' : workingDir,
@@ -1304,7 +1354,7 @@ PYTHON_EOF`;
             HostConfig: {
                 Binds: isDockerImage ?
                     (volumes ? Object.entries(volumes).map(([hostPath, containerPath]) => `${hostPath}:${containerPath}`) : []) :
-                    [`/var/lib/docker/volumes/vehicle-edge-data/_data/applications/${appId}:${workingDir}`],
+                    [`/var/lib/docker/volumes/${dockerVolumeName}/_data/applications/${appId}:${workingDir}`],
                 Memory: 512 * 1024 * 1024,
                 CpuQuota: 50000,
                 NetworkMode: 'host',
