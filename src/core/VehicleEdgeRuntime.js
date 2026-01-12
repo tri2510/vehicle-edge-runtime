@@ -495,10 +495,11 @@ export class VehicleEdgeRuntime extends EventEmitter {
 
             // Handle deployment messages from Kit Manager (forwarded from frontend)
             this.kitManagerConnection.on('messageToKit', async (data) => {
-                this.logger.info('Received deployment message from Kit Manager', {
+                this.logger.info('Received message from Kit Manager', {
                     request_from: data.request_from,
                     cmd: data.cmd,
-                    type: data.type
+                    type: data.type,
+                    id: data.id
                 });
 
                 // Ensure MessageHandler is initialized
@@ -506,33 +507,69 @@ export class VehicleEdgeRuntime extends EventEmitter {
                     this.messageHandler = new MessageHandler(this);
                 }
 
-                // Forward deployment message to MessageHandler
+                // Forward message to MessageHandler and capture response
                 try {
-                    await this.messageHandler.processMessage('kit_manager', {
+                    const response = await this.messageHandler.processMessage('kit_manager', {
                         type: data.type || 'deploy_n_run',
                         cmd: data.cmd,
                         code: data.code,
                         prototype: data.prototype,
-                        convertedCode: data.convertedCode
+                        convertedCode: data.convertedCode,
+                        id: data.id  // Pass id from request
                     });
 
-                    this.logger.info('Deployment message processed successfully');
-
-                    // Send success response back to Kit Manager
-                    this.kitManagerConnection.emit('messageToKit-kitReply', {
+                    this.logger.info('Message processed successfully', {
+                        responseType: response?.type,
+                        id: data.id,
                         request_from: data.request_from,
-                        status: 'success',
-                        message: 'Deployment request received and processed'
+                        hasKitManagerConnection: !!this.kitManagerConnection,
+                        connectionConnected: this.kitManagerConnection?.connected
+                    });
+
+                    // Prepare response payload
+                    const responsePayload = {
+                        id: data.id,  // MUST match the request id
+                        request_from: data.request_from,
+                        ...response  // Include all response fields (applications, stats, etc.)
+                    };
+
+                    this.logger.info('About to emit to Kit Manager', {
+                        id: data.id,
+                        payloadKeys: Object.keys(responsePayload),
+                        payloadSize: JSON.stringify(responsePayload).length
+                    });
+
+                    // Send response back to Kit Manager with id field
+                    try {
+                        this.kitManagerConnection.emit('messageToKit-kitReply', responsePayload);
+                        this.logger.info('Emit call completed successfully');
+                    } catch (emitError) {
+                        this.logger.error('Emit call failed', { error: emitError.message, stack: emitError.stack });
+                        throw emitError;
+                    }
+
+                    this.logger.info('Response sent to Kit Manager', {
+                        id: data.id,
+                        responseType: response?.type,
+                        applicationsCount: response?.applications?.length || 0
                     });
                 } catch (error) {
-                    this.logger.error('Error processing deployment message', { error: error.message });
-
-                    // Send error response back to Kit Manager
-                    this.kitManagerConnection.emit('messageToKit-kitReply', {
-                        request_from: data.request_from,
-                        status: 'error',
-                        message: error.message
+                    this.logger.error('Error processing message', {
+                        error: error.message,
+                        stack: error.stack
                     });
+
+                    // Send error response back to Kit Manager with id field
+                    try {
+                        this.kitManagerConnection.emit('messageToKit-kitReply', {
+                            id: data.id,  // MUST match the request id
+                            request_from: data.request_from,
+                            type: 'error',
+                            error: error.message
+                        });
+                    } catch (emitError) {
+                        this.logger.error('Failed to send error response', { error: emitError.message });
+                    }
                 }
             });
         });
