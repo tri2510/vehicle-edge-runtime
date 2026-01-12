@@ -20,6 +20,7 @@ export class MockServiceManager {
         this.appId = 'VEA-mock-service';
         this.appType = 'mock-service';
         this.db = null; // Will be set by setDatabase()
+        this.runtime = null; // Will be set by setRuntime()
     }
 
     /**
@@ -28,6 +29,14 @@ export class MockServiceManager {
     setDatabase(db) {
         this.db = db;
         this.logger.info('Database manager set for MockServiceManager');
+    }
+
+    /**
+     * Set runtime for integration
+     */
+    setRuntime(runtime) {
+        this.runtime = runtime;
+        this.logger.info('Runtime set for MockServiceManager');
     }
 
     /**
@@ -263,6 +272,16 @@ export class MockServiceManager {
 
             this.logger.info('✅ Mock service started successfully', { mode, containerId: container.id });
 
+            // Start streaming Docker logs to console
+            if (this.runtime && this.runtime.consoleManager) {
+                this.runtime.consoleManager.startDockerLogStreaming(this.containerName, this.appId)
+                    .catch(error => this.logger.warn('Failed to start Docker log streaming', {
+                        appId: this.appId,
+                        containerId: this.containerName,
+                        error: error.message
+                    }));
+            }
+
             // Update database
             await this.updateDatabaseStatus('running', this.containerName);
             await this.addDatabaseLog('info', `Mock service started in ${mode} mode`);
@@ -290,6 +309,11 @@ export class MockServiceManager {
         try {
             await this.addDatabaseLog('info', 'Stopping mock service');
             await this.updateDatabaseStatus('stopping');
+
+            // Stop Docker log streaming
+            if (this.runtime && this.runtime.consoleManager) {
+                await this.runtime.consoleManager.stopDockerLogStreaming(this.appId);
+            }
 
             const container = this.docker.getContainer(this.containerName);
             await container.stop({ t: 10 }); // 10 second grace period

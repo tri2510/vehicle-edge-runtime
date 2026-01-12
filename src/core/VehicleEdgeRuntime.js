@@ -72,6 +72,7 @@ export class VehicleEdgeRuntime extends EventEmitter {
             dataPath: this.options.dataPath,
             logLevel: this.options.logLevel
         });
+        this.mockServiceManager.setRuntime(this);
         this.wsHandler = new WebSocketHandler(this);
 
         // Database manager

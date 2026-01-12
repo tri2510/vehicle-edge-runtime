@@ -448,6 +448,16 @@ export class EnhancedApplicationManager {
                 command: fullCommand
             });
 
+            // Start streaming Docker logs to console
+            if (this.runtime.consoleManager && containerId) {
+                this.runtime.consoleManager.startDockerLogStreaming(containerId, actualExecutionId)
+                    .catch(error => this.logger.warn('Failed to start Docker log streaming', {
+                        appId,
+                        containerId,
+                        error: error.message
+                    }));
+            }
+
             // Return success response
             return {
                 status: 'started',
@@ -2590,6 +2600,11 @@ PYTHON_EOF`;
                     const { promisify } = await import('util');
                     const execAsync = promisify(exec);
 
+                    // Stop Docker log streaming
+                    if (this.runtime.consoleManager) {
+                        await this.runtime.consoleManager.stopDockerLogStreaming(resolvedAppId);
+                    }
+
                     // Stop and remove container
                     await execAsync(`docker stop ${containerId}`);
                     await execAsync(`docker rm ${containerId}`);
@@ -2616,6 +2631,11 @@ PYTHON_EOF`;
                             executionId,
                             appId: resolvedAppId
                         });
+
+                        // Stop Docker log streaming
+                        if (this.runtime.consoleManager) {
+                            await this.runtime.consoleManager.stopDockerLogStreaming(executionId);
+                        }
 
                         await appInfo.container.stop({ t: 10 });
                         await appInfo.container.remove();

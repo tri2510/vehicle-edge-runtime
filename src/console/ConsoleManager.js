@@ -315,4 +315,180 @@ export class ConsoleManager {
             this.logger.warn('Failed to cleanup old logs', { error: error.message });
         }
     }
+
+    /**
+     * Start tailing Docker container logs and streaming to subscribers
+     * @param {string} containerId - Docker container ID or name
+     * @param {string} executionId - Execution ID (appId)
+     */
+    async startDockerLogStreaming(containerId, executionId) {
+        if (!this.runtime) {
+            this.logger.warn('Runtime not set, cannot start Docker log streaming');
+            return;
+        }
+
+        // Check if already streaming
+        if (this.dockerLogStreams && this.dockerLogStreams.has(executionId)) {
+            this.logger.debug('Already streaming Docker logs', { executionId, containerId });
+            return;
+        }
+
+        this.logger.info('Starting Docker log streaming', { containerId, executionId });
+
+        try {
+            // Initialize Map if not exists
+            if (!this.dockerLogStreams) {
+                this.dockerLogStreams = new Map();
+            }
+
+            // Use Docker to tail logs
+            const { spawn } = await import('child_process');
+
+            const dockerArgs = ['logs', '-f', '--tail', '100', containerId];
+            this.logger.debug('Spawning docker logs process', { args: dockerArgs });
+
+            const dockerProcess = spawn('docker', dockerArgs);
+
+            // Handle stdout
+            dockerProcess.stdout.on('data', (data) => {
+                const output = data.toString();
+                this._processDockerLogLine(executionId, 'stdout', output);
+            });
+
+            // Handle stderr
+            dockerProcess.stderr.on('data', (data) => {
+                const output = data.toString();
+                this._processDockerLogLine(executionId, 'stderr', output);
+            });
+
+            // Handle process exit
+            dockerProcess.on('close', (code) => {
+                this.logger.info('Docker log streaming stopped', { executionId, containerId, exitCode: code });
+                if (this.dockerLogStreams) {
+                    this.dockerLogStreams.delete(executionId);
+                }
+            });
+
+            // Handle process error
+            dockerProcess.on('error', (error) => {
+                this.logger.error('Docker log streaming process error', { executionId, error: error.message });
+                if (this.dockerLogStreams) {
+                    this.dockerLogStreams.delete(executionId);
+                }
+            });
+
+            // Store the process so we can stop it later
+            this.dockerLogStreams.set(executionId, {
+                process: dockerProcess,
+                containerId,
+                startTime: Date.now()
+            });
+
+            this.logger.info('Docker log streaming started', { executionId, containerId });
+
+        } catch (error) {
+            this.logger.error('Failed to start Docker log streaming', { executionId, containerId, error: error.message });
+        }
+    }
+
+    /**
+     * Process a line of Docker log output
+     * @param {string} executionId - Execution ID
+     * @param {string} stream - 'stdout' or 'stderr'
+     * @param {string} data - Raw log data
+     */
+    _processDockerLogLine(executionId, stream, data) {
+        try {
+            // Docker logs ANSI color codes, strip them
+            const ansiRegex = /\x1b\[[0-9;]*m/g;
+            const cleanData = data.replace(ansiRegex, '');
+
+            // Split by lines and process each
+            const lines = cleanData.split('\n').filter(line => line.trim());
+
+            for (const line of lines) {
+                // Try to parse as JSON first (Kuksa logs are JSON)
+                let timestamp = new Date().toISOString();
+                let output = line;
+
+                try {
+                    const jsonLog = JSON.parse(line);
+                    if (jsonLog.timestamp) {
+                        timestamp = jsonLog.timestamp;
+                    }
+                    // Extract the actual message from various JSON log formats
+                    if (jsonLog.msg) {
+                        output = jsonLog.msg;
+                    } else if (jsonLog.message) {
+                        output = jsonLog.message;
+                    } else if (jsonLog.text) {
+                        output = jsonLog.text;
+                    }
+                } catch {
+                    // Not JSON, use the line as-is
+                    output = line;
+                }
+
+                // Create output entry
+                const outputEntry = {
+                    timestamp,
+                    stream,
+                    output: output.replace(/\n$/, '') // Remove trailing newline
+                };
+
+                // Add to buffer
+                this._addToBuffer(executionId, outputEntry);
+
+                // Write to log file
+                this._writeToLogFile(executionId, outputEntry);
+
+                // Broadcast to subscribers
+                this._broadcastOutput(executionId, outputEntry);
+            }
+        } catch (error) {
+            this.logger.error('Failed to process Docker log line', { executionId, error: error.message });
+        }
+    }
+
+    /**
+     * Stop streaming Docker logs for an execution
+     * @param {string} executionId - Execution ID
+     */
+    async stopDockerLogStreaming(executionId) {
+        if (!this.dockerLogStreams || !this.dockerLogStreams.has(executionId)) {
+            return;
+        }
+
+        this.logger.info('Stopping Docker log streaming', { executionId });
+
+        const streamInfo = this.dockerLogStreams.get(executionId);
+        if (streamInfo && streamInfo.process) {
+            streamInfo.process.kill('SIGTERM');
+        }
+
+        this.dockerLogStreams.delete(executionId);
+    }
+
+    /**
+     * Stop all Docker log streams
+     */
+    async stopAllDockerLogStreaming() {
+        if (!this.dockerLogStreams) {
+            return;
+        }
+
+        this.logger.info('Stopping all Docker log streaming', { count: this.dockerLogStreams.size });
+
+        for (const [executionId, streamInfo] of this.dockerLogStreams) {
+            if (streamInfo && streamInfo.process) {
+                try {
+                    streamInfo.process.kill('SIGTERM');
+                } catch (error) {
+                    this.logger.warn('Failed to stop Docker log stream', { executionId, error: error.message });
+                }
+            }
+        }
+
+        this.dockerLogStreams.clear();
+    }
 }
