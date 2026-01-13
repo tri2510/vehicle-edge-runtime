@@ -254,9 +254,16 @@ export class ConsoleManager {
             ...outputEntry
         };
 
+        this.logger.info('Broadcasting console output', {
+            executionId,
+            totalSubscriptions: this.subscriptions.size,
+            subscribers: Array.from(this.subscriptions.keys())
+        });
+
         // Send to all subscribed clients
         for (const [clientId, subscriptions] of this.subscriptions) {
             if (subscriptions.has(executionId)) {
+                this.logger.info('Sending console output to client', { clientId, executionId });
                 this._sendToClient(clientId, message);
             }
         }
@@ -265,17 +272,23 @@ export class ConsoleManager {
     _sendToClient(clientId, message) {
         if (!this.runtime) return;
 
+        this.logger.info('_sendToClient called', { clientId, messageType: message.type, executionId: message.executionId });
+
         // Handle Kit Manager clients - send through Kit Manager connection
-        // clientId is the kit_id (UUID) when message comes from Kit Manager
-        if (clientId && clientId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // clientId is the kit_id when message comes from Kit Manager
+        // Kit Manager uses IDs like: Wv3wuyIZzSg66ZYQAEdO or xjYxhf2_XT7APnbRAEc6
+        // Check if clientId looks like a Kit Manager ID (not 'kit_manager' string)
+        if (clientId && clientId !== 'kit_manager' && !clientId.startsWith('ws-')) {
+            this.logger.info('Identified as Kit Manager client', { clientId });
             if (this.runtime.kitManagerConnection && this.runtime.kitManagerConnection.connected) {
-                // Add to_kit_id field for proper routing by Kit Manager
+                // Kit Manager expects request_from field for routing (like other response messages)
                 const messageWithRouting = {
-                    ...message,
-                    to_kit_id: clientId
+                    request_from: clientId,  // Use request_from like other messages
+                    ...message
                 };
+                this.logger.info('Emitting to Kit Manager', { request_from: clientId, executionId: message.executionId, type: message.type });
                 this.runtime.kitManagerConnection.emit('messageToKit-kitReply', messageWithRouting);
-                this.logger.debug('Console output sent to Kit Manager', { executionId: message.executionId, to_kit_id: clientId });
+                this.logger.info('Console output sent to Kit Manager', { executionId: message.executionId, request_from: clientId });
             } else {
                 this.logger.warn('Kit Manager connection not available for console output');
             }
@@ -441,6 +454,8 @@ export class ConsoleManager {
                     stream,
                     output: output.replace(/\n$/, '') // Remove trailing newline
                 };
+
+                this.logger.info('Processing Docker log line', { executionId, stream, output: output.substring(0, 50) });
 
                 // Add to buffer
                 this._addToBuffer(executionId, outputEntry);

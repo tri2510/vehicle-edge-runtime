@@ -12,9 +12,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: vehicle-edge-runtime
-    # Add container user to host's docker group (configurable GID)
+    # Add container user to host's docker group and root group
+    # Root group (0) ensures Docker socket access universally
+    # Additional groups cover different system configurations
     group_add:
-      - "${DOCKER_GID:-994}"  # Auto-detect or use default 994
+      - "0"      # root group - Docker socket is always owned by root
+      - "999"    # common docker group GID (ping)
+      - "994"    # alternative docker group GID
     ports:
       - "3002:3002"  # WebSocket API
       - "3003:3003"  # Health Check

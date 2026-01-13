@@ -18,11 +18,13 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user with Docker group access
-# Try to use GID 999 for docker group to match host, fallback if in use
+# Add to root group (GID 0) to ensure Docker socket access across all systems
+# Docker socket is always owned by root, so this works universally
 RUN addgroup -g 1001 -S nodejs && \
     (addgroup -g 999 -S docker 2>/dev/null || addgroup -S docker) && \
     adduser -S vehicle-edge -u 1001 -G nodejs && \
-    adduser vehicle-edge docker
+    adduser vehicle-edge docker && \
+    adduser vehicle-edge root
 
 # Set working directory
 WORKDIR /app

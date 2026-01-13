@@ -359,6 +359,16 @@ export class EnhancedApplicationManager {
             // Set up monitoring
             await this._setupContainerMonitoring(actualExecutionId, container, appId);
 
+            // Start streaming Docker logs to console
+            if (this.runtime.consoleManager && container.id) {
+                this.runtime.consoleManager.startDockerLogStreaming(container.id, actualExecutionId)
+                    .catch(error => this.logger.warn('Failed to start Docker log streaming', {
+                        appId,
+                        containerId: container.id,
+                        error: error.message
+                    }));
+            }
+
             this.logger.info('Python application started', { executionId: actualExecutionId, appId, containerId: container.id });
 
             return {
