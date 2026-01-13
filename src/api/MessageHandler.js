@@ -1721,6 +1721,16 @@ export class MessageHandler {
                 this.logger.info('Redirecting mock service stop to MockServiceManager');
                 const result = await this.runtime.mockServiceManager.stop();
 
+                // Update database status for mock service
+                if (this.runtime.appManager && this.runtime.appManager.db) {
+                    try {
+                        await this.runtime.appManager.db.updateApplication(appId, { status: 'stopped' });
+                        this.logger.info('Mock service status updated in database', { appId, status: 'stopped' });
+                    } catch (dbError) {
+                        this.logger.warn('Failed to update mock service status in database', { appId, error: dbError.message });
+                    }
+                }
+
                 return {
                     type: 'stop_app-response',
                     id: message.id,
@@ -2656,6 +2666,16 @@ CMD ["./${runCommand || 'app'}"]
                 kuksaHost: kuksaHost || '127.0.0.1',
                 kuksaPort: kuksaPort || '55555'
             });
+
+            // Update database status for mock service
+            if (result.success && this.runtime.appManager && this.runtime.appManager.db) {
+                try {
+                    await this.runtime.appManager.db.updateApplication('VEA-mock-service', { status: 'running' });
+                    this.logger.info('Mock service status updated in database', { appId: 'VEA-mock-service', status: 'running' });
+                } catch (dbError) {
+                    this.logger.warn('Failed to update mock service status in database', { appId: 'VEA-mock-service', error: dbError.message });
+                }
+            }
 
             return {
                 type: 'mock_service_status',

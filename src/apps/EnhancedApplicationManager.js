@@ -2384,6 +2384,33 @@ PYTHON_EOF`;
                             }
                         }
 
+                        // Special handling for mock service - check its actual container status
+                        if (app.id === 'VEA-mock-service' && this.runtime?.mockServiceManager) {
+                            try {
+                                const status = await this.runtime.mockServiceManager.getStatus();
+                                // Map mock service status to app status
+                                let realTimeStatus = 'stopped';
+                                if (status.running) {
+                                    realTimeStatus = 'running';
+                                }
+
+                                // Update status if it changed
+                                if (realTimeStatus !== currentStatus) {
+                                    currentStatus = realTimeStatus;
+                                    await this.db.updateApplication(app.id, { status: currentStatus });
+                                    this.logger.info('Mock service status synced from actual state', {
+                                        appId: app.id,
+                                        status: currentStatus
+                                    });
+                                }
+                            } catch (mockError) {
+                                this.logger.debug('Could not get mock service status', {
+                                    appId: app.id,
+                                    error: mockError.message
+                                });
+                            }
+                        }
+
                         // If we have container info (from memory or database), verify real-time status
                         if (appInfo?.container || containerId) {
                             try {
