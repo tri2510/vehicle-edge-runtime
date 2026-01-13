@@ -516,7 +516,9 @@ export class VehicleEdgeRuntime extends EventEmitter {
                         type: data.type || 'deploy_n_run'
                     };
 
-                    const response = await this.messageHandler.processMessage('kit_manager', messagePayload);
+                    // Use request_from (kit_id) as clientId for proper routing of console output
+                    const clientId = data.request_from || 'kit_manager';
+                    const response = await this.messageHandler.processMessage(clientId, messagePayload);
 
                     this.logger.info('Message processed successfully', {
                         responseType: response?.type,

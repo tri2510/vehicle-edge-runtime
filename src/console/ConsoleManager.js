@@ -266,10 +266,16 @@ export class ConsoleManager {
         if (!this.runtime) return;
 
         // Handle Kit Manager clients - send through Kit Manager connection
-        if (clientId === 'kit_manager' || clientId.startsWith('kit_manager:')) {
+        // clientId is the kit_id (UUID) when message comes from Kit Manager
+        if (clientId && clientId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
             if (this.runtime.kitManagerConnection && this.runtime.kitManagerConnection.connected) {
-                this.runtime.kitManagerConnection.emit('messageToKit-kitReply', message);
-                this.logger.debug('Console output sent to Kit Manager', { executionId: message.executionId });
+                // Add to_kit_id field for proper routing by Kit Manager
+                const messageWithRouting = {
+                    ...message,
+                    to_kit_id: clientId
+                };
+                this.runtime.kitManagerConnection.emit('messageToKit-kitReply', messageWithRouting);
+                this.logger.debug('Console output sent to Kit Manager', { executionId: message.executionId, to_kit_id: clientId });
             } else {
                 this.logger.warn('Kit Manager connection not available for console output');
             }
