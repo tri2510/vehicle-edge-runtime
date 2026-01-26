@@ -1,0 +1,49 @@
+# Python
+dist/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Build artifacts
+target/
+*.log
+mock_service.log
+mock/mock_service.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+mock/test_add.json
+mock/quick_test.py
+mock/test_remove.json
+
+# Local data
+data/python-packages/
+data/custom-models/
+.vssclient_history
+
+# Submodule references
+kuksa_syncer_ref/
+
+# Docker
+*.tar
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

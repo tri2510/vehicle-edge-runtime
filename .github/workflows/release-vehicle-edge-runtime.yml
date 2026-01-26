@@ -1,0 +1,79 @@
+# Copyright (c) 2025 Eclipse Foundation.
+# 
+# This program and the accompanying materials are made available under the
+# terms of the MIT License which is available at
+# https://opensource.org/licenses/MIT.
+#
+# SPDX-License-Identifier: MIT
+
+name: Release Docker Image
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # submodules: recursive # Not needed, all code is now in repo
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        id: docker_login
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Set TAG variable
+        id: vars
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          GIT_TAG=${GITHUB_REF#refs/tags/}
+          TAG="${SHORT_SHA}-${GIT_TAG}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "TAG=$TAG"  # output for debug
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build and optionally push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ steps.docker_login.outcome == 'success' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/vehicle-edge-runtime:${{ env.TAG }}
+            ghcr.io/${{ github.repository_owner }}/vehicle-edge-runtime:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Temp fix
+      # https://github.com/docker/build-push-action/issues/252
+      # https://github.com/moby/buildkit/issues/1896
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
