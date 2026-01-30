@@ -18,6 +18,21 @@ The easiest way to run the Vehicle Edge Runtime is using the provided `docker-de
 > ./scripts/setup-docker-compose.sh
 > ```
 
+### Pre-flight Check
+
+Before deploying, run the pre-flight check to validate your environment:
+
+```bash
+./scripts/preflight-check.sh
+```
+
+This will check for:
+- Docker installation and status
+- Docker Compose V2 plugin
+- Port availability
+- Network conflicts
+- Configuration files
+
 ### Basic Usage
 
 ```bash
@@ -103,6 +118,20 @@ After deployment, the runtime exposes the following endpoints:
 | WebSocket API | `ws://localhost:3002/runtime` | Main WebSocket API for app management |
 | Health Check | `http://localhost:3003/health` | HTTP health check endpoint |
 | Kuksa Web UI | `http://localhost:55555` | Kuksa databroker web UI (kuksa/full profile) |
+
+## Troubleshooting
+
+If you encounter issues during deployment or runtime:
+
+- **Pre-flight Check**: Run `./scripts/preflight-check.sh` to validate your environment
+- **Setup Guide**: See [SETUP.md](SETUP.md) for detailed setup instructions
+- **Troubleshooting Guide**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and solutions
+
+Common issues:
+- **Docker Compose not found**: Run `./scripts/setup-docker-compose.sh`
+- **Port already in use**: Check what's using ports 3002, 3003, 55555
+- **Network conflicts**: Remove old networks with `docker network prune`
+- **Container exits immediately**: Check logs with `./docker-deploy.sh logs`
 
 ## Configuration
 
