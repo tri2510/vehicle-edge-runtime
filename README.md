@@ -8,8 +8,15 @@ The easiest way to run the Vehicle Edge Runtime is using the provided `docker-de
 
 ### Prerequisites
 
-- Docker (with Docker Compose)
+- Docker (with Docker Compose V2 plugin)
 - Docker daemon running
+
+> **Note:** This project requires the newer `docker compose` (V2) plugin, not the older `docker-compose` standalone command.
+>
+> See [SETUP.md](SETUP.md) for detailed setup instructions or run:
+> ```bash
+> ./scripts/setup-docker-compose.sh
+> ```
 
 ### Basic Usage
 
